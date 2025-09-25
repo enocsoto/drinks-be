@@ -1,6 +1,4 @@
 import { Module } from "@nestjs/common";
-import { DatabaseService } from "./database.service";
-import { DatabaseController } from "./database.controller";
 import { SequelizeModule } from "@nestjs/sequelize";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 
@@ -21,7 +19,5 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
       }),
     }),
   ],
-  controllers: [DatabaseController],
-  providers: [DatabaseService],
 })
 export class DatabaseModule {}
