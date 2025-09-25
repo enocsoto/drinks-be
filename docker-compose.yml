@@ -1,0 +1,44 @@
+services:
+  # Servicio de la aplicación NestJS
+  app:
+    build: . # Construye la imagen a partir del Dockerfile en el directorio actual
+    container_name: drinks_api
+    restart: always
+    ports:
+      - '${APP_PORT}:${APP_PORT}' # Mapea el puerto de la app (ej: 3000:3000)
+    depends_on:
+      - db # Se asegura de que el contenedor de la BD inicie primero
+    environment:
+      - DATABASE_HOST=db
+      - DATABASE_PORT=${DB_PORT}
+      - DATABASE_USER=${DB_USER}
+      - DATABASE_PASSWORD=${DB_PASSWORD}
+      - DATABASE_NAME=${DB_NAME}
+      - APP_PORT=${APP_PORT}
+    networks:
+      - app-network
+
+  # Servicio de la base de datos PostgreSQL
+  db:
+    image: postgres:14 # Usa una imagen oficial y ligera de Postgres
+    container_name: drinks_db
+    restart: always
+    ports:
+      - '${DB_PORT}:5432' # Mapea el puerto de la BD para acceso externo (ej: 5432:5432)
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data # Persiste los datos de la BD
+    networks:
+      - app-network
+
+# Define las redes y volúmenes
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
