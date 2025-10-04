@@ -2,11 +2,11 @@ import { Table, Column, Model, DataType, HasMany } from "sequelize-typescript";
 import { Sale } from "../../sales/entities/sale.entity";
 
 @Table({
-  tableName: "beverages",
+  tableName: "waiters",
   timestamps: true,
   paranoid: true,
 })
-export class Beverage extends Model {
+export class Waiter extends Model {
   @Column({
     type: DataType.INTEGER,
     primaryKey: true,
@@ -20,12 +20,6 @@ export class Beverage extends Model {
     unique: true,
   })
   name: string;
-
-  @Column({
-    type: DataType.DECIMAL(10, 2),
-    allowNull: false,
-  })
-  price: number;
 
   @HasMany(() => Sale)
   sales: Sale[];

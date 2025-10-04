@@ -1,5 +1,5 @@
 import { Table, Column, Model, DataType, IsUUID, PrimaryKey, HasMany } from "sequelize-typescript";
-import { Sale } from "src/sales/entities/sale.entity";
+import { Sale } from "../../sales/entities/sale.entity";
 
 @Table({
   tableName: "users",
