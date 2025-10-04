@@ -24,9 +24,13 @@ export class BeverageService {
     }
   }
 
-
   async findOne(id: number): Promise<Beverage> {
-    const beverage = await this.beverageRepository.findByPk(id);
+    const beverage = await this.beverageRepository.findOne({
+      where: {id, isActive: true},
+      // include: {
+
+      // }
+    });
     if (!beverage) {
       throw new BadRequestException(`La bebida con id ${id} no existe.`);
     }

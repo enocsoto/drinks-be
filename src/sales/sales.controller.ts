@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Query } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
@@ -13,13 +13,13 @@ export class SalesController {
   }
 
   @Get()
-  findAll() {
-    return this.salesService.findAll();
+  findAll(@Query('date') date?: string) {
+    return this.salesService.findAll(date);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.salesService.findOne(+id);
+  findOne(@Param('id') id: string, @Query('date') date?: string, @Query('sellerId') sellerId?: string) {
+    return this.salesService.findOne(+id, date, sellerId);
   }
 
   @Patch(':id')
@@ -27,8 +27,4 @@ export class SalesController {
     return this.salesService.update(+id, updateSaleDto);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.salesService.remove(+id);
-  }
 }

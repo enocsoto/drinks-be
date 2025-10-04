@@ -54,8 +54,8 @@ export class Beverage extends Model<Beverage, BeverageCreationAttributes> {
   })
   isActive: boolean;
 
-  @HasMany(() => Sale)
-  sales: Sale[];
+  // @HasMany(() => Sale)
+  // sales: Sale[];
 
   //  @HasMany(() => SaleDetail)
   // saleDetails: SaleDetail[];

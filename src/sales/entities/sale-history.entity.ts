@@ -1,4 +1,4 @@
-// src/modules/sales/entities/sale-history.entity.ts
+// src/modules/sales/entities/sale-history.entity.ts (MANTENIDA)
 
 import { Table, Column, Model, DataType, ForeignKey, BelongsTo } from "sequelize-typescript";
 import { Sale } from "./sale.entity";
@@ -6,13 +6,6 @@ import { User } from "../../user/entities/user.entity";
 
 @Table({ tableName: "sale_history", timestamps: true })
 export class SaleHistory extends Model {
-  @Column({
-    type: DataType.INTEGER,
-    primaryKey: true,
-    autoIncrement: true,
-  })
-  id: number;
-
   // --- Relación con Sale ---
   @ForeignKey(() => Sale)
   @Column({ allowNull: false })
@@ -24,7 +17,7 @@ export class SaleHistory extends Model {
   // --- Relación con el User que actualizó ---
   @ForeignKey(() => User)
   @Column({
-    type: DataType.UUID, // 👈 CAMBIO AQUÍ
+    type: DataType.UUID,
     allowNull: false,
   })
   updatedByUserId: string;
@@ -33,7 +26,7 @@ export class SaleHistory extends Model {
   updatedByUser: User;
 
   @Column({ type: DataType.JSON, allowNull: false })
-  previousData: any; // Guardamos el estado anterior de la venta
+  previousData: any;
 
   @Column({
     type: DataType.STRING,

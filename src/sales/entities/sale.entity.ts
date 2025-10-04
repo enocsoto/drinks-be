@@ -1,9 +1,15 @@
-// src/modules/sales/entities/sale.entity.ts
-
-import { Table, Column, Model, DataType, ForeignKey, BelongsTo, HasMany } from "sequelize-typescript";
-import { Beverage } from "../../beverage/entities/beverage.entity";
+import {
+  Table,
+  Column,
+  Model,
+  DataType,
+  ForeignKey,
+  BelongsTo,
+  HasMany,
+} from "sequelize-typescript";
 import { User } from "../../user/entities/user.entity";
-import { SaleHistory } from "./SaleHistory";
+import { SaleDetail } from "./sale-detail.entity";
+import { SaleHistory } from "./sale-history.entity";
 
 @Table({ tableName: "sales", timestamps: true, paranoid: true })
 export class Sale extends Model {
@@ -14,7 +20,7 @@ export class Sale extends Model {
   })
   id: number;
 
-  // --- Relación con User ---
+  // --- Manejar quién La vendió ---
   @ForeignKey(() => User)
   @Column({
     type: DataType.UUID,
@@ -25,27 +31,26 @@ export class Sale extends Model {
   @BelongsTo(() => User)
   user: User;
 
-  // --- Relación con Beverage ---
-  @ForeignKey(() => Beverage)
-  @Column({ allowNull: false })
-  beverageId: number;
-
-  @BelongsTo(() => Beverage)
-  beverage: Beverage;
-
-  @Column({
-    type: DataType.INTEGER,
-    allowNull: false,
-  })
-  quantity: number;
-
+  // --- Manejar el total del precio (SUMA de todos los detalles) ---
   @Column({
     type: DataType.DECIMAL(10, 2),
     allowNull: false,
+    defaultValue: 0.0, // Se actualizará al agregar detalles
+    comment: "Precio total de todos los SaleDetails en esta venta",
   })
   totalPrice: number;
 
-  // --- Relación con SaleHistory ---
+  @Column({
+    type: DataType.DATE,
+    allowNull: false,
+    defaultValue: DataType.NOW,
+  })
+  DateSale: Date;
+
+  // --- Relaciones a detalles y auditoría ---
+  @HasMany(() => SaleDetail)
+  details: SaleDetail[]; // Ahora una venta tiene muchos detalles
+
   @HasMany(() => SaleHistory)
   history: SaleHistory[];
 }
