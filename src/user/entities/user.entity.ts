@@ -1,5 +1,6 @@
 import { Table, Column, Model, DataType, IsUUID, PrimaryKey, HasMany } from "sequelize-typescript";
 import { Sale } from "../../sales/entities/sale.entity";
+import { UserRole } from "../enum/User-roles.enum";
 
 @Table({
   tableName: "users",
@@ -36,10 +37,11 @@ export class User extends Model {
   document: string;
 
   @Column({
-    type: DataType.STRING,
-    allowNull: true,
+    type: DataType.ENUM(...Object.values(UserRole)),
+    defaultValue: UserRole.SELLER,
+    allowNull: false,
   })
-  role: string;
+  role: UserRole;
 
   @Column({
     type: DataType.BOOLEAN,

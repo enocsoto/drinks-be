@@ -1,0 +1,32 @@
+export enum DrinkType {
+  ALCOHOLIC = "ALCOHOLICA",
+  SODA = "GASEOSA",
+  WATER = "AGUA",
+  JUICE = "JUGO",
+  OTHER = "OTRO",
+}
+
+export enum DrinksAlCoholic {
+  AGUILA = "AGUILA",
+  CLUB_COLOMBIA = "CLUB COLOMBIA",
+  COSTEÑA = "COSTEÑA",
+  POKER = "POKER",
+  AGUARDIENTE = "AGUARDIENTE",
+}
+
+export enum DrinksSoda {
+  COCA_COLA = "COCA COLA",
+  PEPSI = "PEPSI",
+  FANTA = "FANTA",
+  SPRITE = "SPRITE",
+  MANZANA_POSTOBON = "MANZANA POSTOBON",
+  GATORADE = "GATORADE",
+}
+
+export enum DrinksWater {
+  CRISTAL = "CRISTAL",
+  SANTANDER = "SANTANDER",
+  CIELO = "CIELO",
+  EPURA = "EPURA",
+  AQUAFINA = "AQUAFINA",
+}
