@@ -1,7 +1,8 @@
 import { Controller, Post, Body, HttpStatus, HttpCode } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto } from './dto';
+import { LoginDto } from './dto';
 import { ApiResponse, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { CreateUserDto } from '../user/dto/create-user.dto';
 
 @Controller('auth')
 @ApiTags('Auth')
@@ -13,7 +14,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a new user' })
   @ApiResponse({ status: 201, description: 'User successfully created.' })
   @ApiResponse({ status: 400, description: 'Validation or duplicate error.' })
-  async register(@Body() registerDto: RegisterDto) {
+  async register(@Body() registerDto: CreateUserDto) {
     return this.authService.register(registerDto);
   }
 

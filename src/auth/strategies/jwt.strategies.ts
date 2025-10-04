@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UserService } from '../../user/user.service';
@@ -15,6 +15,7 @@ interface JwtPayload {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
+  private readonly logger = new Logger(JwtStrategy.name);
   constructor(
     private readonly usersService: UserService,
     private readonly configService: ConfigService,
@@ -27,12 +28,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(payload: JwtPayload): Promise<User> {
+    this.logger.debug(`Validating JWT payload: ${JSON.stringify(payload)}`);
     const user = await this.usersService.findUser(payload.sub);
+    this.logger.debug(`User lookup for sub=${payload.sub}: ${user ? 'FOUND' : 'NOT FOUND'}`);
 
     if (!user) {
-      throw new UnauthorizedException(
-        'Token inválido o usuario no encontrado.',
-      );
+      this.logger.warn(`JWT validation failed: user not found (sub=${payload.sub})`);
+      throw new UnauthorizedException('Token inválido o usuario no encontrado.');
     }
 
     return user;

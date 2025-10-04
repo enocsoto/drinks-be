@@ -14,11 +14,26 @@ export class RolesGuard implements CanActivate {
 
     if (!requiredRoles) return true;
 
-    const { user } = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest();
+    const { user } = request || {};
 
-    const userRole: string = user?.role;
+    // Normalize role reading to handle plain objects and Sequelize Model instances
+    let userRole: string | undefined = undefined;
+    if (!user) return false;
+
+    // direct property
+    if (user.role) userRole = user.role;
+
+    // Sequelize instances often keep raw values on dataValues
+    if (!userRole && (user as any).dataValues && (user as any).dataValues.role)
+      userRole = (user as any).dataValues.role;
+
+    // Sequelize getter
+    if (!userRole && typeof (user as any).get === 'function')
+      userRole = (user as any).get('role');
+
     if (!userRole) return false;
 
-    return requiredRoles.includes(userRole);
+    return requiredRoles.includes(userRole as string);
   }
 }

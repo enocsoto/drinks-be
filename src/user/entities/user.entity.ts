@@ -26,19 +26,15 @@ export class User extends Model {
   @Column({
     type: DataType.STRING,
     allowNull: false,
-    // no devolver la password en las consultas
-    get(){
-      return undefined;
-    }
   })
   password: string;
 
   @Column({
-    type: DataType.STRING,
+    type: DataType.INTEGER,
     allowNull: true,
     unique: true,
   })
-  document: string;
+  document: number;
 
   @Column({
     type: DataType.ENUM(...Object.values(UserRole)),
@@ -59,12 +55,6 @@ export class User extends Model {
     allowNull: true,
   })
   email: string;
-
-  @Column({
-    type: DataType.DATE,
-    allowNull: true,
-  })
-  last_sign_in_at: Date;
 
   @HasMany(() => Sale)
   sales: Sale[];
