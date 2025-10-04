@@ -10,36 +10,35 @@ export class UserService {
   constructor(@InjectModel(User) private readonly userModel: typeof User) {}
 
   /**
-   * Create a new user (used by UserController)
-   */
-  async create(createUserDto: CreateUserDto): Promise<User> {
-    const { password, ...rest } = createUserDto as any;
-    const hashed = await bcrypt.hash(password, 10);
-    const user = await this.userModel.create({ ...rest, password: hashed });
-    return user;
-  }
-
-  /**
    * Create a user used by AuthService.register (accepts RegisterDto shape)
    */
-  async createUser(payload: { name: string; email: string; password: string }) {
+  async createUser(payload: { name: string; email: string; password: string; document: string }) {
     const hashed = await bcrypt.hash(payload.password, 10);
     const user = await this.userModel.create({
       name: payload.name,
       email: payload.email,
+      document: payload.document,
       password: hashed,
     });
+    // remove password from returned object
+    // @ts-ignore
+    delete user.dataValues.password;
     return user;
   }
 
   /**
    * Validate user credentials and return the user when valid
    */
-  async validateUserCredentials(email: string, password: string): Promise<User | null> {
-    const user = await this.userModel.findOne({ where: { email } });
+  async validateUserCredentials(document: string, password: string): Promise<User | null> {
+    const user = await this.userModel.findOne({ where: { document } });
     if (!user) return null;
-    const match = await bcrypt.compare(password, (user as any).password);
+    // password column has a getter that hides the value, read raw value
+    const stored = (user as any).getDataValue ? (user as any).getDataValue('password') : (user as any).password;
+    const match = await bcrypt.compare(password, stored);
     if (!match) return null;
+    // remove password before returning
+    // @ts-ignore
+    delete user.dataValues.password;
     return user;
   }
 

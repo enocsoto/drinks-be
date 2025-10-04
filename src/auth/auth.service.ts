@@ -12,9 +12,9 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async validateUser(email: string, password: string): Promise<User> {
+  async validateUser(document: string, password: string): Promise<User> {
     const isMatch = await this.userService.validateUserCredentials(
-      email,
+      document,
       password,
     );
 
@@ -24,11 +24,11 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto): Promise<LoginResponse> {
-    const user = await this.validateUser(loginDto.email, loginDto.password);
+    const user = await this.validateUser(loginDto.document, loginDto.password);
 
     const payload = {
       sub: user.id,
-      email: user.email,
+      document: user.document,
       role: user.role,
     };
 
@@ -38,7 +38,13 @@ export class AuthService {
   }
 
   async register(registerDto: RegisterDto): Promise<User> {
-    const user = await this.userService.createUser(registerDto);
+    // expect registerDto to include document, name, email and password
+    const user = await this.userService.createUser({
+      name: registerDto.name,
+      email: registerDto.email,
+      document: registerDto.document,
+      password: registerDto.password,
+    });
     return user;
   }
 }

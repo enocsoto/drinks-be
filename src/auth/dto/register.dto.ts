@@ -13,12 +13,12 @@ export class RegisterDto {
 
   @ApiProperty({
     required: true,
-    description: 'Email of the user.',
-    example: 'email@email.com',
+    description: "User's document (identification).",
+    example: '12345678',
   })
-  @IsEmail({}, { message: 'The email format is invalid.' })
-  @IsNotEmpty({ message: 'Email is required.' })
-  email: string;
+  @IsString({ message: 'Document must be a string.' })
+  @IsNotEmpty({ message: 'Document is required.' })
+  document: string;
 
   @ApiProperty({
     required: true,
@@ -29,4 +29,13 @@ export class RegisterDto {
   @IsString({ message: 'Password must be a string.' })
   @IsNotEmpty({ message: 'Password is required.' })
   password: string;
+
+  @ApiProperty({
+    required: true,
+    description: 'Unique email of the user.',
+    example: 'email@email.com',
+  })
+  @IsEmail({}, { message: 'The email format is invalid.' })
+  @IsNotEmpty({ message: 'Email is required.' })
+  email: string;
 }
