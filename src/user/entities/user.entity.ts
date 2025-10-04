@@ -18,9 +18,34 @@ export class User extends Model {
 
   @Column({
     type: DataType.STRING,
+    allowNull: false,
+  })
+  name: string;
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: false,
+  })
+  password: string;
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: true,
+    unique: true,
+  })
+  document: string;
+
+  @Column({
+    type: DataType.STRING,
     allowNull: true,
   })
   role: string;
+
+  @Column({
+    type: DataType.BOOLEAN,
+    defaultValue: true,
+  })
+  isActive: boolean;
 
   @Column({
     type: DataType.STRING,
