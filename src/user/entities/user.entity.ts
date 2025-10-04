@@ -26,6 +26,10 @@ export class User extends Model {
   @Column({
     type: DataType.STRING,
     allowNull: false,
+    // no devolver la password en las consultas
+    get(){
+      return undefined;
+    }
   })
   password: string;
 
