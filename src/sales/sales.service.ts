@@ -130,8 +130,6 @@ export class SalesService {
 
       const previousData = { sale: sale.toJSON(), detail: detail.toJSON() };
 
-      let fieldsToUpdate;
-
       let quantity = detail.quantity;
       let beverageId = detail.beverageId;
       if (updateSaleDto.quantity !== undefined) quantity = updateSaleDto.quantity;
@@ -145,24 +143,33 @@ export class SalesService {
       }
 
       const subtotal = Number((unitPrice * quantity).toFixed(2));
-      await this.saleDetailModel.update(
+
+      // Recalculate total by replacing the subtotal of the detail being updated
+      // This avoids using stale subtotal values from `sale.details` after we update the DB
+      const newTotal = sale.details.reduce((acc: number, d: SaleDetail) => {
+        if (d.id === detail.id) return acc + subtotal;
+        return acc + Number(d.subtotal);
+      }, 0);
+      const totalPrice = Number(newTotal.toFixed(2));
+
+      // Prepare fields to update for sale
+      const fieldsToUpdate: Partial<Sale> = {};
+      if (updateSaleDto.sellerId) fieldsToUpdate.userDocument = updateSaleDto.sellerId;
+      fieldsToUpdate.totalPrice = totalPrice;
+
+      // Perform DB writes in parallel within the same transaction where it's safe to do so.
+      // Updating detail(s) and updating the sale total can be executed concurrently.
+      const updateDetailPromise = this.saleDetailModel.update(
         { beverageId, quantity, unitPrice, subtotal },
         { where: { saleId: sale.id }, transaction },
       );
 
-      if (updateSaleDto.sellerId) fieldsToUpdate.userId = updateSaleDto.sellerId;
+      const updateSalePromise = sale.update(fieldsToUpdate, { transaction });
 
-      const details = await this.saleDetailModel.findAll({
-        where: { saleId: sale.id },
-        transaction,
-      });
-      const newTotal = details.reduce((acc, d) => acc + Number(d.subtotal), 0);
-      fieldsToUpdate.totalPrice = Number(newTotal.toFixed(2));
-
-      await sale.update(fieldsToUpdate, { transaction });
+      const promises: Promise<any>[] = [updateDetailPromise, updateSalePromise];
 
       if (updateSaleDto.updatedByUserId) {
-        await this.saleHistoryModel.create(
+        const historyPromise = this.saleHistoryModel.create(
           {
             saleId: sale.id,
             updatedByUserId: updateSaleDto.updatedByUserId,
@@ -171,7 +178,10 @@ export class SalesService {
           },
           { transaction },
         );
+        promises.push(historyPromise);
       }
+
+      await Promise.all(promises);
 
       return this.findOne(id);
     });
