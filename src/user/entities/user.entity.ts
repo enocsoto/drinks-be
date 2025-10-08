@@ -37,11 +37,11 @@ export class User extends Model {
   document: number;
 
   @Column({
-    type: DataType.ENUM(...Object.values(UserRole)),
-    defaultValue: UserRole.SELLER,
+    type: DataType.ARRAY(DataType.ENUM(...Object.values(UserRole))),
+    defaultValue: [UserRole.SELLER],
     allowNull: false,
   })
-  role: UserRole;
+  role: UserRole[];
 
   @Column({
     type: DataType.BOOLEAN,
@@ -49,13 +49,13 @@ export class User extends Model {
   })
   isActive: boolean;
 
-  @Column({
-    type: DataType.STRING,
-    unique: true,
-    allowNull: true,
-  })
-  email: string;
+  // @Column({
+  //   type: DataType.STRING,
+  //   unique: true,
+  //   allowNull: true,
+  // })
+  // email: string;
 
-  @HasMany(() => Sale)
+  @HasMany(() => Sale, { foreignKey: 'userDocument', sourceKey: 'document' })
   sales: Sale[];
 }

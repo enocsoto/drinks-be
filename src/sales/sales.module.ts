@@ -7,6 +7,7 @@ import { SaleDetail } from "./entities/sale-detail.entity";
 import { SequelizeModule } from "@nestjs/sequelize";
 import { Beverage } from "../beverage/entities/beverage.entity";
 import { BeverageModule } from "../beverage/beverage.module";
+import { AuthModule } from "../auth/auth.module";
 
 @Module({
   imports: [SequelizeModule.forFeature([
@@ -14,7 +15,8 @@ import { BeverageModule } from "../beverage/beverage.module";
       SaleHistory, 
       SaleDetail, 
       Beverage]),
-      BeverageModule
+      BeverageModule,
+      AuthModule,
     ],
   controllers: [SalesController],
   providers: [SalesService],

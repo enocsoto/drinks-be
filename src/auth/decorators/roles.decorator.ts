@@ -1,4 +1,5 @@
 import { SetMetadata } from '@nestjs/common';
+import { UserRole } from '../../user/enum/User-roles.enum';
 
 export const ROLES_KEY = 'roles';
 
@@ -6,4 +7,4 @@ export const ROLES_KEY = 'roles';
  * Custom decorator for assigning required roles to an endpoint.
  * @param roles array of allowed roles (e.g., ['ADMIN', 'SELLER']).
  */
-export const Role = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
+export const RoleProtected = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);

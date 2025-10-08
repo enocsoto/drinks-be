@@ -4,7 +4,9 @@ import { IsBoolean, IsOptional } from "class-validator";
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateUserDto extends PartialType(CreateUserDto) {
-  @ApiPropertyOptional({ description: 'Flag to activate/deactivate user' })
+  @ApiPropertyOptional({ 
+    example: true,
+    description: 'Flag to activate/deactivate user' })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;

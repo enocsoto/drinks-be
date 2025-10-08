@@ -1,7 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString } from 'class-validator';
+import { IsNumber, IsString } from 'class-validator';
 
 export class LoginResponse {
+  @IsNumber()
+  document: number;
+
+  @IsString()
+  pass: string;
+  
   @IsString()
   @ApiProperty({
     description: 'JWT access token required for authenticated requests.',

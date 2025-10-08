@@ -21,14 +21,18 @@ export class Sale extends Model {
   id: number;
 
   // --- Manejar quién La vendió ---
+  // this FK references User.document (not User.id)
   @ForeignKey(() => User)
   @Column({
-    type: DataType.UUID,
+    type: DataType.INTEGER,
     allowNull: false,
+    field: 'user_document',
+    // explicit DB-level reference to the users.document column
+    references: { model: 'users', key: 'document' },
   })
-  userId: string;
+  userDocument: number;
 
-  @BelongsTo(() => User)
+  @BelongsTo(() => User, { foreignKey: 'userDocument', targetKey: 'document' })
   user: User;
 
   // --- Manejar el total del precio (SUMA de todos los detalles) ---

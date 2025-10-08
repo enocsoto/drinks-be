@@ -1,39 +1,29 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
 import { ROLES_KEY } from '../decorators/roles.decorator';
+import { UserRole } from "../../user/enum/User-roles.enum";
 
 @Injectable()
-export class RolesGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+export class UserRoleGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.getAllAndOverride<string[]>(
-      ROLES_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const requiredRoles: UserRole[] = this.reflector.get(ROLES_KEY, context.getHandler());
 
-    if (!requiredRoles) return true;
+    if (!requiredRoles) {
+      return true;
+    }
 
-    const request = context.switchToHttp().getRequest();
-    const { user } = request || {};
+    const { user } = context.switchToHttp().getRequest();
 
-    // Normalize role reading to handle plain objects and Sequelize Model instances
-    let userRole: string | undefined = undefined;
-    if (!user) return false;
+    if (!user) throw new NotFoundException(`User not found`);
 
-    // direct property
-    if (user.role) userRole = user.role;
+    const roles: string[] = Array.isArray(user.role) ? user.role : [user.role];
 
-    // Sequelize instances often keep raw values on dataValues
-    if (!userRole && (user as any).dataValues && (user as any).dataValues.role)
-      userRole = (user as any).dataValues.role;
+    for (const role of roles) {
+      if (requiredRoles.includes(role as UserRole)) return true;
+    }
 
-    // Sequelize getter
-    if (!userRole && typeof (user as any).get === 'function')
-      userRole = (user as any).get('role');
-
-    if (!userRole) return false;
-
-    return requiredRoles.includes(userRole as string);
+    throw new ForbiddenException(`User ${user.name} needs to be an Admin`);
   }
 }

@@ -2,7 +2,6 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
-  UnauthorizedException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
 import * as bcrypt from "bcryptjs";
@@ -12,19 +11,20 @@ import { User } from "./entities/user.entity";
 
 @Injectable()
 export class UserService {
-  constructor(@InjectModel(User) private readonly userModel: typeof User) {}
+  constructor(
+    @InjectModel(User)
+    private readonly userRepository: typeof User,
+  ) {}
 
   /**
    * Create a user used by AuthService.register (accepts RegisterDto shape)
    */
   async createUser(payload: CreateUserDto) {
+    const { password, ...rest } = payload;
     try {
-      const hashed = await bcrypt.hash(payload.password, 10);
-      const user: User = await this.userModel.create({
-        name: payload.name,
-        email: payload.email,
-        document: payload.document,
-        password: hashed,
+      const user: User = await this.userRepository.create({
+        password: bcrypt.hashSync(password, 10),
+        ...rest,
       });
       const safeUser = user.toJSON();
       delete safeUser.password;
@@ -34,38 +34,24 @@ export class UserService {
     }
   }
 
-  /**
-   * Validate user credentials and return the user when valid
-   */
-  async validateUserCredentials(document: number, password: string): Promise<User | null> {
-    try {
-      const user = await this.userModel.findOne({ where: { document } });
-      if (!user) return null;
-      // password column has a getter that hides the value, read raw value
-      const stored = user.password;
-      const match = await bcrypt.compare(password, stored);
-      if (!match) throw new UnauthorizedException("Invalid credentials");
-      return user;
-    } catch (error) {
-      throw new InternalServerErrorException(`Error validating user credentials: ${error.message}`);
-    }
-  }
 
   /**
    * Find a user by primary key (id)
    */
-  async findUser(id: string): Promise<User | null> {
-    const user = await this.userModel.findByPk(id);
+  async findUserByCriteria(term: string | number): Promise<User | null> {
+    let where = {};
+    if (typeof +term === "number") {
+      where = { document: term, isActive: true };
+    } else {
+      where = { id: term, isActive: true };
+    }
+    const user = await this.userRepository.findOne({ where });
     if (!user) return null;
     return user;
   }
 
-  async findAll() {
-    return this.userModel.findAll({ attributes: { exclude: ["password"] } });
-  }
-
   async findOne(id: string) {
-    const user = await this.userModel.findByPk(id, { attributes: { exclude: ["password"] } });
+    const user = await this.userRepository.findByPk(id, { attributes: { exclude: ["password"] } });
     if (!user) throw new NotFoundException(`User ${id} not found`);
     return user;
   }

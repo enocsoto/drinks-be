@@ -14,7 +14,7 @@ export class LoginDto {
   @ApiProperty({
     required: true,
     description: 'Password of the user to login.',
-    example: 'password',
+    example: 'secret123',
   })
   @MinLength(6, { message: 'Password must be at least 6 characters long.' })
   @IsString({ message: 'Password must be a string.' })

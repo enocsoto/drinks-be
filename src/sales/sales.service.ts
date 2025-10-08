@@ -9,6 +9,7 @@ import { Sequelize } from 'sequelize-typescript';
 import { Op } from 'sequelize';
 import { BeverageService } from '../beverage/beverage.service';
 import { CreateSaleResponseDto } from './dto/response/create-sale.response.dto';
+import { User } from '../user/entities/user.entity';
 
 @Injectable()
 export class SalesService {
@@ -20,7 +21,9 @@ export class SalesService {
     private readonly sequelize: Sequelize,
   ) {}
 
-  async create(createSaleDto: CreateSaleDto): Promise<CreateSaleResponseDto> {
+  async create(createSaleDto: CreateSaleDto, user:User): Promise<CreateSaleResponseDto> {
+        if (!createSaleDto.sellerId) createSaleDto.sellerId = user?.document;
+    
     const { beverageId, quantity, sellerId } = createSaleDto;
 
     const transaction = await this.sequelize.transaction();
@@ -33,7 +36,7 @@ export class SalesService {
 
       const sale: Sale = await this.saleModel.create(
         {
-          userId: sellerId,
+          userDocument: sellerId,
           totalPrice: computedTotal,
           DateSale: new Date(),
         },
@@ -177,14 +180,14 @@ export class SalesService {
   private summaryBySeller(sales: Sale[]){
     const summaryBySeller: Record<
       string,
-      { sellerId: string;
+      { sellerId: number;
         name?: string;
         totalQuantity: number
       }
       > = {};
       for (const sale of sales) {
         const user = sale.user;
-        const seller = user ? user.id : sale.userId;
+        const seller = user ? user.document : sale.userDocument;
         const sellerName = user ? user.name : "Vendedor Eliminado";
         const details = sale.details || [];
         const qty = details.reduce((acc: number, d: SaleDetail) => acc + Number(d.quantity), 0);
