@@ -11,6 +11,7 @@ import { CreateUserDto } from "../user/dto/create-user.dto";
 import { LoginDto, LoginResponse } from "./dto";
 import * as bcrypt from "bcryptjs";
 import { JwtPayload } from "./interfaces/jwt-payload.interface";
+import { Get } from '@nestjs/common';
 
 @Injectable()
 export class AuthService {
@@ -58,15 +59,14 @@ export class AuthService {
     };
   }
 
-  async register(registerDto: CreateUserDto): Promise<User> {
-    
+  async register(registerDto: CreateUserDto){
     const user = await this.userRepository.createUser(registerDto);
-      const payload: JwtPayload = {
+    const payload: JwtPayload = {
       sub: user.id,
       document: user.document,
       role: user.role,
     };
-    const token = await this.generateJwtSecret(payload)
+    const token = await this.generateJwtSecret(payload);
 
     return {
       ...user,
@@ -74,7 +74,21 @@ export class AuthService {
     };
   }
 
-  private async generateJwtSecret(payload: JwtPayload){
-    return this.jwtService.signAsync(payload)
+  private async generateJwtSecret(payload: JwtPayload) {
+    return this.jwtService.signAsync(payload);
   }
+
+  async checkAuthStatus(user: User){
+    const payload: JwtPayload = {
+        sub: user.id,
+        document: user.document,
+        role: user.role,
+      };
+
+      const token = await this.generateJwtSecret(payload);
+      return {
+        ...user.dataValues,
+        acces_token: token,
+      };
+    }
 }

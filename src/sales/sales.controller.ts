@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Query, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Query } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
@@ -17,7 +17,7 @@ export class SalesController {
   @ApiOperation({ summary: "Create a new sale" })
   @ApiResponse({ status: 201, description: "Sale created" })
   @Auth(UserRole.SELLER, UserRole.ADMIN)
-  create(@Body() createSaleDto: CreateSaleDto, @CurrentUser() user: any) {
+  create(@Body() createSaleDto: CreateSaleDto, @CurrentUser() user: User) {
     return this.salesService.create(createSaleDto, user);
   }
 

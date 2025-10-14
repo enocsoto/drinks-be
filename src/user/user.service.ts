@@ -19,13 +19,15 @@ export class UserService {
   /**
    * Create a user used by AuthService.register (accepts RegisterDto shape)
    */
-  async createUser(payload: CreateUserDto) {
+  async createUser(payload: CreateUserDto): Promise<User> {
     const { password, ...rest } = payload;
     try {
       const user: User = await this.userRepository.create({
         password: bcrypt.hashSync(password, 10),
         ...rest,
-      });
+        raw: true
+      },
+    );
       const safeUser = user.toJSON();
       delete safeUser.password;
       return safeUser;
@@ -50,8 +52,8 @@ export class UserService {
     return user;
   }
 
-  async findOne(id: string) {
-    const user = await this.userRepository.findByPk(id, { attributes: { exclude: ["password"] } });
+  async findOne(id: string): Promise<User> {
+    const user = await this.userRepository.findByPk(id, { attributes: { exclude: ["password"] }, raw:true });
     if (!user) throw new NotFoundException(`User ${id} not found`);
     return user;
   }
