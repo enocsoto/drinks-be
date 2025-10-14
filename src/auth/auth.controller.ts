@@ -4,9 +4,8 @@ import { LoginDto } from './dto';
 import { ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CreateUserDto } from '../user/dto/create-user.dto';
 import { User } from '../user/entities/user.entity';
-import { CurrentUser } from './decorators/current-user.decorator';
-import { UserRole } from '../user/enum/User-roles.enum';
-import { Auth } from './decorators';
+import { UserRole } from '../user/enum/user-roles.enum';
+import { Auth, CurrentUser } from "./decorators";
 
 @ApiTags("Auth")
 @Controller("auth")

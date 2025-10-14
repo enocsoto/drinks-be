@@ -1,6 +1,7 @@
 import { PartialType } from "@nestjs/mapped-types";
 import { CreateSaleDto } from "./create-sale.dto";
 import { ApiProperty } from "@nestjs/swagger";
+import { IsString } from "class-validator";
 
 export class UpdateSaleDto extends PartialType(CreateSaleDto) {
   @ApiProperty({ example: 2, description: "Cantidad a vender", required: false })
@@ -10,11 +11,12 @@ export class UpdateSaleDto extends PartialType(CreateSaleDto) {
   sellerId?: number | undefined;
 
   @ApiProperty({
-    example: "123e4567-e89b-12d3-a456-426614174000",
-    description: "ID del usuario que actualiza",
-    required: false,
+    example: "Detalle actualizado de la venta",
+    description: "Motivo de la actualizacion de la venta",
+    required: true,
   })
-  updatedByUserId?: string;
+  @IsString()
+  changeDescription: string;
 
   @ApiProperty({ example: 1, description: "ID de la bebida", required: false })
   beverageId?: number | undefined;

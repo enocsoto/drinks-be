@@ -1,6 +1,6 @@
 import { Table, Column, Model, DataType, IsUUID, PrimaryKey, HasMany } from "sequelize-typescript";
 import { Sale } from "../../sales/entities/sale.entity";
-import { UserRole } from "../enum/User-roles.enum";
+import { UserRole } from "../enum/user-roles.enum";
 
 @Table({
   tableName: "users",

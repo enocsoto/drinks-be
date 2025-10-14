@@ -6,7 +6,7 @@ import { Sale } from './entities/sale.entity';
 import { SaleDetail } from './entities/sale-detail.entity';
 import { SaleHistory } from './entities/sale-history.entity';
 import { Sequelize } from 'sequelize-typescript';
-import { Op } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import { BeverageService } from '../beverage/beverage.service';
 import { CreateSaleResponseDto } from './dto/response/create-sale.response.dto';
 import { User } from '../user/entities/user.entity';
@@ -14,16 +14,16 @@ import { User } from '../user/entities/user.entity';
 @Injectable()
 export class SalesService {
   constructor(
-    @InjectModel(Sale) private readonly saleModel: typeof Sale,
-    @InjectModel(SaleDetail) private readonly saleDetailModel: typeof SaleDetail,
-    @InjectModel(SaleHistory) private readonly saleHistoryModel: typeof SaleHistory,
+    @InjectModel(Sale) private readonly saleRepository: typeof Sale,
+    @InjectModel(SaleDetail) private readonly saleDetailRepository: typeof SaleDetail,
+    @InjectModel(SaleHistory) private readonly saleHistoryRepository: typeof SaleHistory,
     @Inject(BeverageService) private readonly beverageService: BeverageService,
     private readonly sequelize: Sequelize,
   ) {}
 
-  async create(createSaleDto: CreateSaleDto, user:User): Promise<CreateSaleResponseDto> {
-        if (!createSaleDto.sellerId) createSaleDto.sellerId = user?.document;
-    
+  async create(createSaleDto: CreateSaleDto, user: User): Promise<CreateSaleResponseDto> {
+    if (!createSaleDto.sellerId) createSaleDto.sellerId = user?.document;
+
     const { beverageId, quantity, sellerId } = createSaleDto;
 
     const transaction = await this.sequelize.transaction();
@@ -34,7 +34,7 @@ export class SalesService {
 
       const computedTotal = subtotal;
 
-      const sale: Sale = await this.saleModel.create(
+      const sale: Sale = await this.saleRepository.create(
         {
           userDocument: sellerId,
           totalPrice: computedTotal,
@@ -43,7 +43,7 @@ export class SalesService {
         { transaction },
       );
 
-      const detail: SaleDetail = await this.saleDetailModel.create(
+      const detail: SaleDetail = await this.saleDetailRepository.create(
         {
           saleId: sale.id,
           beverageId,
@@ -77,19 +77,20 @@ export class SalesService {
    * Si no hay fecha, devuelve todas las ventas.
    */
   async findAll(date?: string) {
+    if (!date) date = new Date().toString();
     const where: any = {};
     if (date) {
       const { start, end } = this.getDayRange(date);
       where.DateSale = { [Op.gte]: start, [Op.lt]: end };
     }
 
-    const sales = await this.saleModel.findAll({
+    const sales = await this.saleRepository.findAll({
       where,
-      include: [{ model: this.saleDetailModel }, { association: "user" }],
+      include: [{ model: this.saleDetailRepository }, { association: "user" }],
       order: [["DateSale", "DESC"]],
     });
 
-    const summaryBySeller = this.summaryBySeller(sales)
+    const summaryBySeller = this.summaryBySeller(sales);
 
     return { sales, summary: Object.values(summaryBySeller) };
   }
@@ -98,31 +99,47 @@ export class SalesService {
    * Buscar una venta por id, o si se pasan 'date' y 'sellerId',
    * devolver ventas de ese vendedor en la fecha.
    */
-  async findOne(id: number, date?: string, sellerId?: string) {
-    if (date && sellerId) {
-      const { start, end } = this.getDayRange(date);
-      const sales = await this.saleModel.findAll({
-        where: { DateSale: { [Op.gte]: start, [Op.lt]: end }, userId: sellerId },
-        include: [{ model: this.saleDetailModel }, { association: "user" }],
+  async findOne(sellerId: number, date?: string) {
+    try {
+      if (date && sellerId) {
+        const { start, end } = this.getDayRange(date);
+        const sales = await this.saleRepository.findAll({
+          where: { DateSale: { [Op.gte]: start, [Op.lt]: end }, userId: sellerId },
+          include: [{ model: this.saleDetailRepository }, { association: "user" }],
+        });
+
+        const summaryBySeller = this.summaryBySeller(sales);
+
+        return { sales, summary: Object.values(summaryBySeller) };
+      }
+
+      return await this.saleRepository.findOne({
+        where: { userDocument: sellerId },
+        include: [{ model: this.saleDetailRepository }, { association: "user" }],
       });
-
-      const summaryBySeller = this.summaryBySeller(sales);
-
-      return { sales, summary: Object.values(summaryBySeller) };
+    } catch (error) {
+      throw new BadRequestException(`Error al buscar la venta: ${error.message}`);
     }
-
-    return await this.saleModel.findOne({
-      where: { id },
-      include: [{ model: this.saleDetailModel }, { association: "user" }],
-    });
   }
 
-  update(id: number, updateSaleDto: UpdateSaleDto) {
+  async findSaleById(id: Sale["id"], transaction?: Transaction): Promise<Sale> {
+    const sale = await this.saleRepository.findOne({
+      where: {
+        id,
+      },
+      include: [
+        {
+          model: this.saleDetailRepository,
+        },
+      ],
+      transaction,
+    });
+    if (!sale) throw new NotFoundException(`Venta con id ${id} no encontrada`);
+    return sale;
+  }
+  update(id: number, updateSaleDto: UpdateSaleDto, user: User): Promise<Sale> {
     return this.sequelize.transaction(async transaction => {
-      const sale = await this.saleModel.findByPk(id, {
-        include: [{ model: this.saleDetailModel }],
-        transaction,
-      });
+      const sale = await this.findSaleById(id, transaction);
       if (!sale) throw new NotFoundException(`Sale with id ${id} not found`);
 
       const detail = sale.details && sale.details[0];
@@ -133,15 +150,9 @@ export class SalesService {
       let quantity = detail.quantity;
       let beverageId = detail.beverageId;
       if (updateSaleDto.quantity !== undefined) quantity = updateSaleDto.quantity;
-      if (updateSaleDto.beverageId !== undefined)
-        beverageId = updateSaleDto.beverageId;
+      if (updateSaleDto.beverageId !== undefined) beverageId = updateSaleDto.beverageId;
 
       let unitPrice = Number(detail.unitPrice);
-      if (updateSaleDto.beverageId !== undefined) {
-        const beverage = await this.beverageService.findOne(beverageId);
-        unitPrice = Number(beverage.price);
-      }
-
       const subtotal = Number((unitPrice * quantity).toFixed(2));
 
       // Recalculate total by replacing the subtotal of the detail being updated
@@ -159,7 +170,7 @@ export class SalesService {
 
       // Perform DB writes in parallel within the same transaction where it's safe to do so.
       // Updating detail(s) and updating the sale total can be executed concurrently.
-      const updateDetailPromise = this.saleDetailModel.update(
+      const updateDetailPromise = this.saleDetailRepository.update(
         { beverageId, quantity, unitPrice, subtotal },
         { where: { saleId: sale.id }, transaction },
       );
@@ -168,44 +179,39 @@ export class SalesService {
 
       const promises: Promise<any>[] = [updateDetailPromise, updateSalePromise];
 
-      if (updateSaleDto.updatedByUserId) {
-        const historyPromise = this.saleHistoryModel.create(
-          {
-            saleId: sale.id,
-            updatedByUserId: updateSaleDto.updatedByUserId,
-            previousData,
-            changeDescription: `Detalle actualizado`,
-          },
-          { transaction },
-        );
-        promises.push(historyPromise);
-      }
+      const historyPromise = this.saleHistoryRepository.create(
+        {
+          saleId: sale.id,
+          updatedByUserId: user.id,
+          previousData,
+          changeDescription: updateSaleDto.changeDescription,
+        },
+        { transaction },
+      );
+      promises.push(historyPromise);
 
       await Promise.all(promises);
 
-      return this.findOne(id);
+      return this.findSaleById(id);
     });
   }
 
-  private summaryBySeller(sales: Sale[]){
+  private summaryBySeller(sales: Sale[]) {
     const summaryBySeller: Record<
       string,
-      { sellerId: number;
-        name?: string;
-        totalQuantity: number
-      }
-      > = {};
-      for (const sale of sales) {
-        const user = sale.user;
-        const seller = user ? user.document : sale.userDocument;
-        const sellerName = user ? user.name : "Vendedor Eliminado";
-        const details = sale.details || [];
-        const qty = details.reduce((acc: number, d: SaleDetail) => acc + Number(d.quantity), 0);
-        if (!summaryBySeller[seller])
-          summaryBySeller[seller] = { sellerId: seller, name: sellerName, totalQuantity: 0 };
-        summaryBySeller[seller].totalQuantity += qty;
-      }
-      return Object.values(summaryBySeller);
+      { sellerId: number; name?: string; totalQuantity: number }
+    > = {};
+    for (const sale of sales) {
+      const user = sale.user;
+      const seller = user ? user.document : sale.userDocument;
+      const sellerName = user ? user.name : "Vendedor Eliminado";
+      const details = sale.details || [];
+      const qty = details.reduce((acc: number, d: SaleDetail) => acc + Number(d.quantity), 0);
+      if (!summaryBySeller[seller])
+        summaryBySeller[seller] = { sellerId: seller, name: sellerName, totalQuantity: 0 };
+      summaryBySeller[seller].totalQuantity += qty;
+    }
+    return Object.values(summaryBySeller);
   }
 }
 
