@@ -1,14 +1,12 @@
-import { Controller, Post, Body, HttpStatus, HttpCode, Get, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, HttpStatus, HttpCode, Get } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto';
 import { ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CreateUserDto } from '../user/dto/create-user.dto';
-import { AuthGuard } from '@nestjs/passport';
 import { User } from '../user/entities/user.entity';
 import { CurrentUser } from './decorators/current-user.decorator';
-import { UserRoleGuard } from './guard';
-import { RoleProtected } from './decorators/roles.decorator';
 import { UserRole } from '../user/enum/User-roles.enum';
+import { Auth } from './decorators';
 
 @ApiTags("Auth")
 @Controller("auth")
@@ -32,9 +30,16 @@ export class AuthController {
   }
 
   @Get("test")
-  @RoleProtected(UserRole.ADMIN)
-  @UseGuards(AuthGuard(), UserRoleGuard)
+  @Auth(UserRole.SELLER, UserRole.ADMIN)
   testingPrivateRoute(@CurrentUser() user: User) {
+    return {
+      message: "testing private route",
+      user,
+    };
+  }
+  @Get("test2")
+  @Auth(UserRole.ADMIN)
+  testingPrivateRoute2(@CurrentUser() user: User) {
     return {
       message: "testing private route",
       user,
