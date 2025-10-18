@@ -1,0 +1,139 @@
+name: CI / Deploy to AWS (ECR → ECS, then App Runner)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+jobs:
+  build-and-push:
+    name: Build, test and push image to ECR
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        run: npm run lint --if-present
+
+      - name: Run tests
+        run: npm run test --if-present
+
+      - name: Build
+        run: npm run build --if-present
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to ECR
+        env:
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }} # nombre del repo en ECR
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Obtener URI del repositorio ECR
+          REPO_URI=$(aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" --query "repositories[0].repositoryUri" --output text)
+          if [ "$REPO_URI" = "None" ]; then
+            echo "Repositorio ECR $ECR_REPOSITORY no existe. Creando..."
+            aws ecr create-repository --repository-name "$ECR_REPOSITORY" >/dev/null
+            REPO_URI=$(aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" --query "repositories[0].repositoryUri" --output text)
+          fi
+          echo "REPO_URI=$REPO_URI"
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG $REPO_URI:$IMAGE_TAG
+          docker push $REPO_URI:$IMAGE_TAG
+          echo "IMAGE_URI=$REPO_URI:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  deploy-ecs:
+    name: Deploy to ECS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Retrieve image URI
+        id: get-image
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          REPO_URI=$(aws ecr describe-repositories --repository-names "${{ secrets.ECR_REPOSITORY }}" --query "repositories[0].repositoryUri" --output text)
+          echo "IMAGE_URI=$REPO_URI:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update ECS task definition and service
+        env:
+          IMAGE_URI: ${{ steps.get-image.outputs.IMAGE_URI }}
+          ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+          ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
+          TASK_FAMILY: ${{ secrets.TASK_DEFINITION_FAMILY }}
+        run: |
+          echo "Updating task definition for family $TASK_FAMILY with image $IMAGE_URI"
+          # Export current task definition
+          TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --query 'taskDefinition')
+          # Create new task definition with updated image
+          NEW_TASK_DEF=$(echo "$TASK_DEF_JSON" | jq --arg IMAGE "$IMAGE_URI" '.containerDefinitions[0].image = $IMAGE | {family: .family, taskRoleArn: .taskRoleArn, executionRoleArn: .executionRoleArn, networkMode: .networkMode, containerDefinitions: .containerDefinitions, volumes: .volumes, requiresCompatibilities: .requiresCompatibilities, cpu: .cpu, memory: .memory, placementConstraints: .placementConstraints, inferenceAccelerators: .inferenceAccelerators}')
+          # Register new task definition
+          echo "$NEW_TASK_DEF" > new-task-def.json
+          REGISTERED=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json)
+          REVISION=$(echo "$REGISTERED" | jq -r '.taskDefinition.revision')
+          FAMILY=$(echo "$REGISTERED" | jq -r '.taskDefinition.family')
+          echo "Registered task definition: $FAMILY:$REVISION"
+          # Update service
+          aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --force-new-deployment
+
+  deploy-apprunner:
+    name: Deploy to AWS App Runner
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Retrieve image URI
+        id: get-image-apprunner
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          REPO_URI=$(aws ecr describe-repositories --repository-names "${{ secrets.ECR_REPOSITORY }}" --query "repositories[0].repositoryUri" --output text)
+          echo "IMAGE_URI=$REPO_URI:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Create or update App Runner service
+        env:
+          IMAGE_URI: ${{ steps.get-image-apprunner.outputs.IMAGE_URI }}
+          APPRUNNER_SERVICE_NAME: ${{ secrets.APPRUNNER_SERVICE_NAME }}
+        run: |
+          # Check if service exists
+          SERVICE=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='$APPRUNNER_SERVICE_NAME'] | [0]")
+          if [ "$SERVICE" = "null" ] || [ -z "$SERVICE" ]; then
+            echo "Creating App Runner service $APPRUNNER_SERVICE_NAME"
+            aws apprunner create-service --service-name $APPRUNNER_SERVICE_NAME --source-configuration "{\"ImageRepository\":{\"ImageIdentifier\":\"$IMAGE_URI\",\"ImageConfiguration\":{\"Port\":\"3000\"},\"ImageRepositoryType\":\"ECR\"}}"
+          else
+            ARN=$(echo "$SERVICE" | jq -r '.ServiceArn')
+            echo "Updating App Runner service $APPRUNNER_SERVICE_NAME ($ARN) to use image $IMAGE_URI"
+            # Create a new revision using the existing service descriptor
+            aws apprunner update-service --service-arn $ARN --source-configuration "{\"ImageRepository\":{\"ImageIdentifier\":\"$IMAGE_URI\",\"ImageConfiguration\":{\"Port\":\"3000\"},\"ImageRepositoryType\":\"ECR\"}}"
+          fi
