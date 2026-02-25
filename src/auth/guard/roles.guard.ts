@@ -16,7 +16,9 @@ export class UserRoleGuard implements CanActivate {
 
     const { user } = context.switchToHttp().getRequest();
 
-    if (!user) throw new NotFoundException(`User not found`);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado.');
+    }
 
     const roles: string[] = Array.isArray(user.role) ? user.role : [user.role];
 
@@ -24,6 +26,8 @@ export class UserRoleGuard implements CanActivate {
       if (requiredRoles.includes(role as UserRole)) return true;
     }
 
-    throw new ForbiddenException(`User ${user.name} needs to be an Admin`);
+    throw new ForbiddenException(
+      `El usuario ${user.name} no tiene permisos para esta acción.`,
+    );
   }
 }

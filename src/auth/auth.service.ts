@@ -11,7 +11,6 @@ import { CreateUserDto } from "../user/dto/create-user.dto";
 import { LoginDto, LoginResponse } from "./dto";
 import * as bcrypt from "bcryptjs";
 import { JwtPayload } from "./interfaces/jwt-payload.interface";
-import { Get } from '@nestjs/common';
 
 @Injectable()
 export class AuthService {
@@ -25,20 +24,17 @@ export class AuthService {
    * Validate user credentials and return the user when valid
    */
   async validateUser(document: number, password: string): Promise<User> {
-    try {
-      const user = await this.userRepository.findUserByCriteria(document);
+    const user = await this.userRepository.findUserByCriteria(document);
 
-      if (!user || !user.isActive) throw new UnauthorizedException("Invalid credentials");
-
-      const stored = user.password;
-
-      const match = await bcrypt.compare(password, stored);
-
-      if (!match) throw new UnauthorizedException("Invalid credentials");
-      return user;
-    } catch (error) {
-      throw new InternalServerErrorException(`Error validating user credentials: ${error.message}`);
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Credenciales inválidas.');
     }
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      throw new UnauthorizedException('Credenciales inválidas.');
+    }
+    return user;
   }
 
   async login(loginDto: LoginDto): Promise<LoginResponse> {
@@ -52,11 +48,11 @@ export class AuthService {
 
     const token = await this.generateJwtSecret(payload);
 
+    const { password: _pass, ...safeUser } = user.toJSON() as Record<string, unknown>;
     return {
-      document: user.document,
-      pass: user.password,
+      ...safeUser,
       access_token: token,
-    };
+    } as LoginResponse;
   }
 
   async register(registerDto: CreateUserDto){
@@ -70,7 +66,7 @@ export class AuthService {
 
     return {
       ...user,
-      acces_token: token,
+      access_token: token,
     };
   }
 
@@ -86,9 +82,12 @@ export class AuthService {
       };
 
       const token = await this.generateJwtSecret(payload);
+      const { password: _pass, ...safeUser } = user.toJSON
+        ? user.toJSON()
+        : (user as unknown as Record<string, unknown>);
       return {
-        ...user.dataValues,
-        acces_token: token,
+        ...safeUser,
+        access_token: token,
       };
     }
 }

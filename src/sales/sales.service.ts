@@ -10,6 +10,7 @@ import { Op, Transaction } from 'sequelize';
 import { BeverageService } from '../beverage/beverage.service';
 import { CreateSaleResponseDto } from './dto/response/create-sale.response.dto';
 import { User } from '../user/entities/user.entity';
+import { getDayRange } from '../common/utils/date.util';
 
 @Injectable()
 export class SalesService {
@@ -63,15 +64,6 @@ export class SalesService {
     }
   }
 
-  /** Devuelve el rango start/end para una fecha dada (00:00:00.000 - inicio del siguiente día) */
-  private getDayRange(date: string) {
-    const dayStart = new Date(date);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setDate(dayEnd.getDate() + 1);
-    return { start: dayStart, end: dayEnd };
-  }
-
   /**
    * Devuelve ventas (y resumen por vendedor) opcionalmente filtradas por fecha.
    * Si no hay fecha, devuelve todas las ventas.
@@ -80,7 +72,7 @@ export class SalesService {
     if (!date) date = new Date().toString();
     const where: any = {};
     if (date) {
-      const { start, end } = this.getDayRange(date);
+      const { start, end } = getDayRange(date);
       where.DateSale = { [Op.gte]: start, [Op.lt]: end };
     }
 
@@ -102,9 +94,9 @@ export class SalesService {
   async findOne(sellerId: number, date?: string) {
     try {
       if (date && sellerId) {
-        const { start, end } = this.getDayRange(date);
+        const { start, end } = getDayRange(date);
         const sales = await this.saleRepository.findAll({
-          where: { DateSale: { [Op.gte]: start, [Op.lt]: end }, userId: sellerId },
+          where: { DateSale: { [Op.gte]: start, [Op.lt]: end }, userDocument: sellerId },
           include: [{ model: this.saleDetailRepository }, { association: "user" }],
         });
 
@@ -184,7 +176,7 @@ export class SalesService {
           saleId: sale.id,
           updatedByUserId: user.id,
           previousData,
-          changeDescription: updateSaleDto.changeDescription,
+          changeDescription: updateSaleDto.changeDescription ?? 'Actualización',
         },
         { transaction },
       );
@@ -196,7 +188,7 @@ export class SalesService {
     });
   }
 
-  private summaryBySeller(sales: Sale[]) {
+  private summaryBySeller(sales: Sale[]): Array<{ sellerId: number; name?: string; totalQuantity: number }> {
     const summaryBySeller: Record<
       string,
       { sellerId: number; name?: string; totalQuantity: number }
