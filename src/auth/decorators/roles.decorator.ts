@@ -1,7 +1,7 @@
-import { SetMetadata } from '@nestjs/common';
-import { UserRole } from '../../user/enum/user-roles.enum';
+import { SetMetadata } from "@nestjs/common";
+import { UserRole } from "../../user/enum/user-roles.enum";
 
-export const ROLES_KEY = 'roles';
+export const ROLES_KEY = "roles";
 
 /**
  * Custom decorator for assigning required roles to an endpoint.

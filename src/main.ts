@@ -4,11 +4,26 @@ import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify
 import { ValidationPipe, Logger } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 
+function getCorsOrigins(): string[] {
+  const raw = process.env.CORS_ORIGINS ?? "http://localhost:3000";
+  return raw
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
+  const fastify = new FastifyAdapter();
+  fastify.enableCors({
+    origin: getCorsOrigins(),
+    credentials: true,
+    methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  });
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, fastify);
 
   const logger = new Logger("Bootstrap");
-  const PORT = process.env.APP_PORT ?? 3000;
+  const PORT = process.env.APP_PORT ?? 3001;
   const GLOBAL_PREFIX = "api";
   const SWAGGER_PATH = "docs";
 
@@ -39,4 +54,4 @@ async function bootstrap() {
     `Swagger documentation available at: http://localhost:${PORT}/${GLOBAL_PREFIX}/${SWAGGER_PATH}`,
   );
 }
-bootstrap();
+void bootstrap();

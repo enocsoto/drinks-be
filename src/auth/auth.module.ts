@@ -2,13 +2,13 @@ import { Module } from "@nestjs/common";
 import { PassportModule } from "@nestjs/passport";
 import { JwtModule, JwtModuleOptions } from "@nestjs/jwt";
 import { ConfigModule, ConfigService } from "@nestjs/config";
+import { MongooseModule } from "@nestjs/mongoose";
 import { AuthService } from "./auth.service";
 import { AuthController } from "./auth.controller";
 import { UserModule } from "../user/user.module";
 import { Strategy } from "./enum/strategyes.enum";
 import { JwtStrategy } from "./strategies/jwt.strategies";
-import { SequelizeModule } from "@nestjs/sequelize";
-import { User } from "../user/entities/user.entity";
+import { User, UserSchema } from "../user/schemas/user.schema";
 
 @Module({
   imports: [
@@ -17,7 +17,7 @@ import { User } from "../user/entities/user.entity";
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: async (configService: ConfigService) =>
+      useFactory: (configService: ConfigService) =>
         ({
           secret: configService.get<string>("JWT_SECRET"),
           signOptions: {
@@ -25,11 +25,11 @@ import { User } from "../user/entities/user.entity";
           },
         }) as JwtModuleOptions,
     }),
-    SequelizeModule.forFeature([User]),
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     UserModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
-  exports: [JwtModule, PassportModule, JwtStrategy, SequelizeModule],
+  exports: [JwtModule, PassportModule, JwtStrategy, MongooseModule],
 })
 export class AuthModule {}

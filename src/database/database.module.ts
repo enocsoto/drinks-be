@@ -1,21 +1,16 @@
 import { Module } from "@nestjs/common";
-import { SequelizeModule } from "@nestjs/sequelize";
+import { MongooseModule } from "@nestjs/mongoose";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 
 @Module({
   imports: [
-    SequelizeModule.forRootAsync({
+    MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        dialect: "postgres",
-        host: configService.get("DB_HOST"),
-        port: configService.get("DB_PORT"),
-        username: configService.get("DB_USER"),
-        password: configService.get("DB_PASSWORD"),
-        database: configService.get("DB_NAME"),
-        autoLoadModels: true,
-        synchronize: true,
+        uri:
+          configService.get("MONGODB_URI") ??
+          `mongodb://${configService.get("DB_HOST") ?? "localhost"}:${configService.get("DB_PORT") ?? 27017}/${configService.get("DB_NAME") ?? "drinks"}`,
       }),
     }),
   ],

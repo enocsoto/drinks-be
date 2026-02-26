@@ -1,18 +1,18 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty } from "@nestjs/swagger";
 
 export class UserPayload {
   id: string;
 
-  @ApiProperty({ description: 'MongoDB ObjectId del usuario' })
+  @ApiProperty({ description: "MongoDB ObjectId del usuario" })
   sub: string;
 
-  @ApiProperty({ description: 'Correo del usuario' })
+  @ApiProperty({ description: "Correo del usuario" })
   email: string;
 
-  @ApiProperty({ description: 'Nombre del usuario' })
+  @ApiProperty({ description: "Nombre del usuario" })
   name: string;
 
-  @ApiProperty({ description: 'Rol del usuario', default: 'client' })
+  @ApiProperty({ description: "Rol del usuario", default: "client" })
   role: string;
 
   iat?: number;

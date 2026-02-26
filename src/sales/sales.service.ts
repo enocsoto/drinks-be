@@ -1,194 +1,325 @@
-import { Injectable, NotFoundException, BadRequestException, Inject } from '@nestjs/common';
-import { CreateSaleDto } from './dto/create-sale.dto';
-import { UpdateSaleDto } from './dto/update-sale.dto';
-import { InjectModel } from '@nestjs/sequelize';
-import { Sale } from './entities/sale.entity';
-import { SaleDetail } from './entities/sale-detail.entity';
-import { SaleHistory } from './entities/sale-history.entity';
-import { Sequelize } from 'sequelize-typescript';
-import { Op, Transaction } from 'sequelize';
-import { BeverageService } from '../beverage/beverage.service';
-import { CreateSaleResponseDto } from './dto/response/create-sale.response.dto';
-import { User } from '../user/entities/user.entity';
-import { getDayRange } from '../common/utils/date.util';
+import { Injectable, NotFoundException, BadRequestException, Inject } from "@nestjs/common";
+import { InjectModel } from "@nestjs/mongoose";
+import { Model, Types } from "mongoose";
+import { CreateSaleDto } from "./dto/create-sale.dto";
+import { UpdateSaleDto } from "./dto/update-sale.dto";
+import { Sale, SaleDocument } from "./schemas/sale.schema";
+import { SaleDetail, SaleDetailDocument } from "./schemas/sale-detail.schema";
+import { SaleHistory, SaleHistoryDocument } from "./schemas/sale-history.schema";
+import { BeverageService } from "../beverage/beverage.service";
+import { CreateSaleResponseDto } from "./dto/response/create-sale.response.dto";
+import { User, UserDocument } from "../user/schemas/user.schema";
+import { todayColombia, getDayRangeColombia } from "../common/utils/date-colombia.util";
+import { SaleDetailType } from "./enum/sale-detail-type.enum";
 
 @Injectable()
 export class SalesService {
   constructor(
-    @InjectModel(Sale) private readonly saleRepository: typeof Sale,
-    @InjectModel(SaleDetail) private readonly saleDetailRepository: typeof SaleDetail,
-    @InjectModel(SaleHistory) private readonly saleHistoryRepository: typeof SaleHistory,
+    @InjectModel(Sale.name) private readonly saleModel: Model<SaleDocument>,
+    @InjectModel(SaleDetail.name) private readonly saleDetailModel: Model<SaleDetailDocument>,
+    @InjectModel(SaleHistory.name) private readonly saleHistoryModel: Model<SaleHistoryDocument>,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @Inject(BeverageService) private readonly beverageService: BeverageService,
-    private readonly sequelize: Sequelize,
   ) {}
 
-  async create(createSaleDto: CreateSaleDto, user: User): Promise<CreateSaleResponseDto> {
+  async create(createSaleDto: CreateSaleDto, user: UserDocument): Promise<CreateSaleResponseDto> {
     if (!createSaleDto.sellerId) createSaleDto.sellerId = user?.document;
 
-    const { beverageId, quantity, sellerId } = createSaleDto;
+    const {
+      tableNumber,
+      lineType,
+      beverageId,
+      quantity,
+      unitPrice: inputUnitPrice,
+      description,
+      sellerId,
+    } = createSaleDto;
 
-    const transaction = await this.sequelize.transaction();
-    try {
+    let unitPrice: number;
+    const detailPayload: Partial<SaleDetailDocument> = {
+      saleId: undefined as unknown as Types.ObjectId,
+      type: lineType,
+      quantity,
+      description: description ?? "",
+    };
+
+    if (lineType === SaleDetailType.BEVERAGE) {
+      if (!beverageId) {
+        throw new BadRequestException(
+          "beverageId es obligatorio cuando el tipo de venta es BEVERAGE.",
+        );
+      }
       const beverage = await this.beverageService.findOne(beverageId);
-      const unitPrice = Number(beverage.price);
-      const subtotal = Number((unitPrice * quantity).toFixed(2));
-
-      const computedTotal = subtotal;
-
-      const sale: Sale = await this.saleRepository.create(
-        {
-          userDocument: sellerId,
-          totalPrice: computedTotal,
-          DateSale: new Date(),
-        },
-        { transaction },
-      );
-
-      const detail: SaleDetail = await this.saleDetailRepository.create(
-        {
-          saleId: sale.id,
-          beverageId,
-          quantity,
-          unitPrice,
-          subtotal,
-        },
-        { transaction },
-      );
-
-      await transaction.commit();
-
-      return { sale: sale.toJSON(), detail: detail.toJSON() };
-    } catch (error) {
-      await transaction.rollback();
-      throw new BadRequestException(`Error al crear la venta: ${error.message}`);
-    }
-  }
-
-  /**
-   * Devuelve ventas (y resumen por vendedor) opcionalmente filtradas por fecha.
-   * Si no hay fecha, devuelve todas las ventas.
-   */
-  async findAll(date?: string) {
-    if (!date) date = new Date().toString();
-    const where: any = {};
-    if (date) {
-      const { start, end } = getDayRange(date);
-      where.DateSale = { [Op.gte]: start, [Op.lt]: end };
+      unitPrice = Number(beverage.price);
+      detailPayload.beverageId = new Types.ObjectId(beverageId);
+    } else {
+      if (inputUnitPrice == null || inputUnitPrice < 0) {
+        throw new BadRequestException(
+          "unitPrice es obligatorio para ventas de tipo GLOVES o GAME.",
+        );
+      }
+      unitPrice = Number(inputUnitPrice);
     }
 
-    const sales = await this.saleRepository.findAll({
-      where,
-      include: [{ model: this.saleDetailRepository }, { association: "user" }],
-      order: [["DateSale", "DESC"]],
+    const subtotal = Number((unitPrice * quantity).toFixed(2));
+
+    const saleDate = todayColombia();
+    const sale = await this.saleModel.create({
+      userDocument: sellerId,
+      tableNumber,
+      totalPrice: subtotal,
+      saleDate,
+      DateSale: new Date(),
     });
 
-    const summaryBySeller = this.summaryBySeller(sales);
+    detailPayload.saleId = sale._id;
+    detailPayload.unitPrice = unitPrice;
+    detailPayload.subtotal = subtotal;
 
-    return { sales, summary: Object.values(summaryBySeller) };
+    const detail = await this.saleDetailModel.create(detailPayload);
+
+    return {
+      sale: sale.toJSON(),
+      detail: detail.toJSON(),
+    };
   }
 
-  /**
-   * Buscar una venta por id, o si se pasan 'date' y 'sellerId',
-   * devolver ventas de ese vendedor en la fecha.
-   */
-  async findOne(sellerId: number, date?: string) {
+  async findAll(date?: string): Promise<{ sales: unknown[]; summary: unknown[] }> {
+    if (!date) date = todayColombia();
+    const { start, end } = getDayRangeColombia(date);
+    const where: Record<string, unknown> = {
+      $or: [
+        { saleDate: date },
+        { saleDate: { $exists: false }, DateSale: { $gte: start, $lt: end } },
+      ],
+    };
+
+    const sales = await this.saleModel.find(where).sort({ DateSale: -1 }).lean().exec();
+
+    const saleIds = sales.map(s => s._id);
+    const details = await this.saleDetailModel
+      .find({ saleId: { $in: saleIds } })
+      .populate("beverageId", "name type price")
+      .lean()
+      .exec();
+
+    const docNumbers = [...new Set(sales.map(s => s.userDocument))];
+    const users = await this.userModel
+      .find({ document: { $in: docNumbers } })
+      .select("name document")
+      .lean()
+      .exec();
+    const userByDoc = new Map<number, { document: number; name: string }>();
+    for (const u of users) {
+      userByDoc.set(u.document, { document: u.document, name: u.name });
+    }
+
+    const detailsBySale = new Map<string, typeof details>();
+    for (const d of details) {
+      const sid = d.saleId.toString();
+      if (!detailsBySale.has(sid)) detailsBySale.set(sid, []);
+      detailsBySale.get(sid)!.push(d);
+    }
+
+    const salesWithDetails = sales.map(s => {
+      const user = userByDoc.get(s.userDocument) ?? null;
+      const detailsList = detailsBySale.get(s._id.toString()) ?? [];
+      return {
+        ...s,
+        id: s._id.toString(),
+        tableNumber: s.tableNumber ?? 1,
+        user,
+        details: detailsList.map(d => this.mapDetailToResponse(d)),
+      };
+    });
+
+    const summaryBySeller = this.summaryBySeller(salesWithDetails);
+
+    return { sales: salesWithDetails, summary: Object.values(summaryBySeller) };
+  }
+
+  async findOne(sellerId: number, date?: string): Promise<unknown> {
     try {
       if (date && sellerId) {
-        const { start, end } = getDayRange(date);
-        const sales = await this.saleRepository.findAll({
-          where: { DateSale: { [Op.gte]: start, [Op.lt]: end }, userDocument: sellerId },
-          include: [{ model: this.saleDetailRepository }, { association: "user" }],
+        const { start, end } = getDayRangeColombia(date);
+        const sales = await this.saleModel
+          .find({
+            userDocument: sellerId,
+            $or: [
+              { saleDate: date },
+              { saleDate: { $exists: false }, DateSale: { $gte: start, $lt: end } },
+            ],
+          })
+          .lean()
+          .exec();
+
+        const saleIds = sales.map(s => s._id);
+        const details = await this.saleDetailModel
+          .find({ saleId: { $in: saleIds } })
+          .populate("beverageId", "name type price")
+          .lean()
+          .exec();
+
+        const users = await this.userModel
+          .find({ document: { $in: [...new Set(sales.map(s => s.userDocument))] } })
+          .select("name document")
+          .lean()
+          .exec();
+        const userByDoc = new Map<number, { document: number; name: string }>();
+        for (const u of users) userByDoc.set(u.document, { document: u.document, name: u.name });
+
+        const detailsBySale = new Map<string, typeof details>();
+        for (const d of details) {
+          const sid = d.saleId.toString();
+          if (!detailsBySale.has(sid)) detailsBySale.set(sid, []);
+          detailsBySale.get(sid)!.push(d);
+        }
+
+        const salesWithDetails = sales.map(s => {
+          const user = userByDoc.get(s.userDocument) ?? null;
+          const detailsList = detailsBySale.get(s._id.toString()) ?? [];
+          return {
+            ...s,
+            id: s._id.toString(),
+            tableNumber: s.tableNumber ?? 1,
+            user,
+            details: detailsList.map(d => this.mapDetailToResponse(d)),
+          };
         });
 
-        const summaryBySeller = this.summaryBySeller(sales);
-
-        return { sales, summary: Object.values(summaryBySeller) };
+        const summaryBySeller = this.summaryBySeller(salesWithDetails);
+        return { sales: salesWithDetails, summary: Object.values(summaryBySeller) };
       }
 
-      return await this.saleRepository.findOne({
-        where: { userDocument: sellerId },
-        include: [{ model: this.saleDetailRepository }, { association: "user" }],
-      });
-    } catch (error) {
-      throw new BadRequestException(`Error al buscar la venta: ${error.message}`);
+      const sale = await this.saleModel.findOne({ userDocument: sellerId }).lean().exec();
+
+      if (!sale) return null;
+
+      const details = await this.saleDetailModel
+        .find({ saleId: sale._id })
+        .populate("beverageId", "name type price")
+        .lean()
+        .exec();
+
+      const user = await this.userModel
+        .findOne({ document: sale.userDocument })
+        .select("name document")
+        .lean()
+        .exec();
+
+      return {
+        ...sale,
+        id: sale._id.toString(),
+        tableNumber: sale.tableNumber ?? 1,
+        user: user ? { document: user.document, name: user.name } : null,
+        details: details.map(d => this.mapDetailToResponse(d)),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException(`Error al buscar la venta: ${message}`);
     }
   }
 
-  async findSaleById(id: Sale["id"], transaction?: Transaction): Promise<Sale> {
-    const sale = await this.saleRepository.findOne({
-      where: {
-        id,
-      },
-      include: [
-        {
-          model: this.saleDetailRepository,
-        },
-      ],
-      transaction,
-    });
+  async findSaleById(id: string): Promise<SaleDocument & { details: SaleDetailDocument[] }> {
+    const sale = await this.saleModel.findById(id).exec();
+    const details = await this.saleDetailModel.find({ saleId: id }).exec();
     if (!sale) throw new NotFoundException(`Venta con id ${id} no encontrada`);
-    return sale;
+
+    const saleObj = sale.toObject() as unknown as Record<string, unknown>;
+    saleObj.details = details;
+    return saleObj as unknown as SaleDocument & { details: SaleDetailDocument[] };
   }
-  update(id: number, updateSaleDto: UpdateSaleDto, user: User): Promise<Sale> {
-    return this.sequelize.transaction(async transaction => {
-      const sale = await this.findSaleById(id, transaction);
-      if (!sale) throw new NotFoundException(`Sale with id ${id} not found`);
 
-      const detail = sale.details && sale.details[0];
-      if (!detail) throw new BadRequestException("Sale has no details to update");
+  async update(
+    id: string,
+    updateSaleDto: UpdateSaleDto,
+    user: UserDocument,
+  ): Promise<SaleDocument & { details: SaleDetailDocument[] }> {
+    const sale = await this.saleModel.findById(id).exec();
+    if (!sale) throw new NotFoundException(`Sale with id ${id} not found`);
 
-      const previousData = { sale: sale.toJSON(), detail: detail.toJSON() };
+    const details = await this.saleDetailModel.find({ saleId: id }).exec();
+    const detail = details[0];
+    if (!detail) throw new BadRequestException("Sale has no details to update");
 
-      let quantity = detail.quantity;
-      let beverageId = detail.beverageId;
-      if (updateSaleDto.quantity !== undefined) quantity = updateSaleDto.quantity;
-      if (updateSaleDto.beverageId !== undefined) beverageId = updateSaleDto.beverageId;
+    const previousData = {
+      sale: sale.toJSON(),
+      detail: detail.toJSON(),
+    };
 
-      let unitPrice = Number(detail.unitPrice);
-      const subtotal = Number((unitPrice * quantity).toFixed(2));
+    let quantity = detail.quantity;
+    let beverageId = detail.beverageId;
+    let unitPrice = Number(detail.unitPrice);
 
-      // Recalculate total by replacing the subtotal of the detail being updated
-      // This avoids using stale subtotal values from `sale.details` after we update the DB
-      const newTotal = sale.details.reduce((acc: number, d: SaleDetail) => {
-        if (d.id === detail.id) return acc + subtotal;
-        return acc + Number(d.subtotal);
-      }, 0);
-      const totalPrice = Number(newTotal.toFixed(2));
+    if (updateSaleDto.quantity !== undefined) quantity = updateSaleDto.quantity;
+    if (updateSaleDto.beverageId !== undefined)
+      beverageId = new Types.ObjectId(updateSaleDto.beverageId) as unknown as Types.ObjectId;
 
-      // Prepare fields to update for sale
-      const fieldsToUpdate: Partial<Sale> = {};
-      if (updateSaleDto.sellerId) fieldsToUpdate.userDocument = updateSaleDto.sellerId;
-      fieldsToUpdate.totalPrice = totalPrice;
+    if (detail.type === SaleDetailType.BEVERAGE && beverageId) {
+      const beverage = await this.beverageService.findOne(beverageId.toString());
+      unitPrice = Number(beverage.price);
+    } else if (updateSaleDto.unitPrice !== undefined) {
+      unitPrice = Number(updateSaleDto.unitPrice);
+    }
 
-      // Perform DB writes in parallel within the same transaction where it's safe to do so.
-      // Updating detail(s) and updating the sale total can be executed concurrently.
-      const updateDetailPromise = this.saleDetailRepository.update(
-        { beverageId, quantity, unitPrice, subtotal },
-        { where: { saleId: sale.id }, transaction },
-      );
+    const subtotal = Number((unitPrice * quantity).toFixed(2));
 
-      const updateSalePromise = sale.update(fieldsToUpdate, { transaction });
+    const newTotal = details.reduce((acc: number, d) => {
+      if (d._id.toString() === detail._id.toString()) return acc + subtotal;
+      return acc + Number(d.subtotal);
+    }, 0);
+    const totalPrice = Number(newTotal.toFixed(2));
 
-      const promises: Promise<any>[] = [updateDetailPromise, updateSalePromise];
+    if (updateSaleDto.sellerId) sale.userDocument = updateSaleDto.sellerId;
+    if (updateSaleDto.tableNumber !== undefined) sale.tableNumber = updateSaleDto.tableNumber;
+    sale.totalPrice = totalPrice;
+    await sale.save();
 
-      const historyPromise = this.saleHistoryRepository.create(
-        {
-          saleId: sale.id,
-          updatedByUserId: user.id,
-          previousData,
-          changeDescription: updateSaleDto.changeDescription ?? 'Actualización',
-        },
-        { transaction },
-      );
-      promises.push(historyPromise);
+    await this.saleDetailModel
+      .updateOne({ _id: detail._id }, { beverageId, quantity, unitPrice, subtotal })
+      .exec();
 
-      await Promise.all(promises);
-
-      return this.findSaleById(id);
+    await this.saleHistoryModel.create({
+      saleId: new Types.ObjectId(id),
+      updatedByUserId: user._id,
+      previousData,
+      changeDescription: updateSaleDto.changeDescription ?? "Actualización",
     });
+
+    const updated = await this.findSaleById(id);
+    return updated as SaleDocument & { details: SaleDetailDocument[] };
   }
 
-  private summaryBySeller(sales: Sale[]): Array<{ sellerId: number; name?: string; totalQuantity: number }> {
+  private mapDetailToResponse(d: {
+    _id?: unknown;
+    saleId?: unknown;
+    beverageId?: unknown;
+    [key: string]: unknown;
+  }): Record<string, unknown> {
+    const beverageId =
+      d.beverageId && typeof d.beverageId === "object" && "_id" in d.beverageId
+        ? (d.beverageId as { _id: { toString: () => string } })._id?.toString()
+        : (d.beverageId as { toString?: () => string })?.toString?.();
+    const beverage =
+      d.beverageId && typeof d.beverageId === "object" && "name" in d.beverageId
+        ? d.beverageId
+        : undefined;
+    return {
+      ...d,
+      id: (d._id as { toString?: () => string })?.toString?.(),
+      beverageId: beverageId ?? null,
+      beverage,
+      saleId: (d.saleId as { toString?: () => string })?.toString?.(),
+    };
+  }
+
+  private summaryBySeller(
+    sales: Array<{
+      userDocument: number;
+      user?: { document: number; name: string } | null;
+      details: Array<{ quantity?: number } | Record<string, unknown>>;
+    }>,
+  ): Record<string, { sellerId: number; name?: string; totalQuantity: number }> {
     const summaryBySeller: Record<
       string,
       { sellerId: number; name?: string; totalQuantity: number }
@@ -198,12 +329,15 @@ export class SalesService {
       const seller = user ? user.document : sale.userDocument;
       const sellerName = user ? user.name : "Vendedor Eliminado";
       const details = sale.details || [];
-      const qty = details.reduce((acc: number, d: SaleDetail) => acc + Number(d.quantity), 0);
+      const qty = details.reduce((acc, d) => acc + Number(d.quantity), 0);
       if (!summaryBySeller[seller])
-        summaryBySeller[seller] = { sellerId: seller, name: sellerName, totalQuantity: 0 };
+        summaryBySeller[seller] = {
+          sellerId: seller,
+          name: sellerName,
+          totalQuantity: 0,
+        };
       summaryBySeller[seller].totalQuantity += qty;
     }
-    return Object.values(summaryBySeller);
+    return summaryBySeller;
   }
 }
-

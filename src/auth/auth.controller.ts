@@ -1,10 +1,10 @@
-import { Controller, Post, Body, HttpStatus, HttpCode, Get } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { LoginDto } from './dto';
-import { ApiResponse, ApiTags } from '@nestjs/swagger';
-import { CreateUserDto } from '../user/dto/create-user.dto';
-import { User } from '../user/entities/user.entity';
-import { UserRole } from '../user/enum/user-roles.enum';
+import { Controller, Post, Body, HttpStatus, HttpCode, Get } from "@nestjs/common";
+import { AuthService } from "./auth.service";
+import { LoginDto } from "./dto";
+import { ApiResponse, ApiTags } from "@nestjs/swagger";
+import { CreateUserDto } from "../user/dto/create-user.dto";
+import { UserDocument } from "../user/schemas/user.schema";
+import { UserRole } from "../user/enum/user-roles.enum";
 import { Auth, CurrentUser } from "./decorators";
 
 @ApiTags("Auth")
@@ -16,7 +16,7 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   @ApiResponse({ status: 201, description: "User successfully created." })
   @ApiResponse({ status: 400, description: "Validation or duplicate error." })
-  async register(@Body() registerDto: CreateUserDto) {
+  async register(@Body() registerDto: CreateUserDto): Promise<Record<string, unknown>> {
     return this.authService.register(registerDto);
   }
 
@@ -30,7 +30,7 @@ export class AuthController {
 
   @Get("test")
   @Auth(UserRole.SELLER, UserRole.ADMIN)
-  testingPrivateRoute(@CurrentUser() user: User) {
+  testingPrivateRoute(@CurrentUser() user: UserDocument) {
     return {
       message: "testing private route",
       user,
@@ -38,7 +38,7 @@ export class AuthController {
   }
   @Get("test2")
   @Auth(UserRole.ADMIN)
-  testingPrivateRoute2(@CurrentUser() user: User) {
+  testingPrivateRoute2(@CurrentUser() user: UserDocument) {
     return {
       message: "testing private route",
       user,
@@ -47,7 +47,7 @@ export class AuthController {
 
   @Get("check-status")
   @Auth()
-  checkAuthStatus(@CurrentUser() user: User) {
+  checkAuthStatus(@CurrentUser() user: UserDocument) {
     return this.authService.checkAuthStatus(user);
   }
 }
