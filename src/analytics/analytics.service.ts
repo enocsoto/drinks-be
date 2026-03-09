@@ -6,7 +6,12 @@ import { SaleDetail, SaleDetailDocument } from "../sales/schemas/sale-detail.sch
 import { Beverage, BeverageDocument } from "../beverage/schemas/beverage.schema";
 import { User, UserDocument } from "../user/schemas/user.schema";
 import { DrinkType } from "../beverage/enum/drink-type.enum";
-import { getTodayRange, getMonthsInYear, getWeeksInYearUpToToday } from "../common/utils/date.util";
+import { getMonthsInYear, getWeeksInYearUpToToday } from "../common/utils/date.util";
+import {
+  todayColombia,
+  getDayRangeColombia,
+  getLastDaysColombia,
+} from "../common/utils/date-colombia.util";
 
 export interface TodaySalesDto {
   totalSales: number;
@@ -47,6 +52,21 @@ export interface TransactionsDto {
   total: number;
 }
 
+export interface BeverageBreakdownItem {
+  beverageId: string;
+  name: string;
+  count: number;
+  amount: number;
+  percentage: number;
+  series: Array<{ month: number; year: number; label: string; count: number; amount: number }>;
+}
+
+export interface SalesByBeverageDto {
+  totalTicketSales: number;
+  totalAmount: number;
+  breakdown: BeverageBreakdownItem[];
+}
+
 @Injectable()
 export class AnalyticsService {
   constructor(
@@ -57,7 +77,8 @@ export class AnalyticsService {
   ) {}
 
   async getTodaySales(): Promise<TodaySalesDto> {
-    const { start, end } = getTodayRange();
+    const dateStr = todayColombia();
+    const { start, end } = getDayRangeColombia(dateStr);
 
     const sales = await this.saleModel
       .find({ DateSale: { $gte: start, $lt: end } })
@@ -106,7 +127,7 @@ export class AnalyticsService {
 
   async getSalesByPeriod(
     year?: number,
-    granularity: "month" | "week" = "month",
+    granularity: "month" | "week" | "day" = "month",
   ): Promise<SalesByPeriodDto> {
     const targetYear = year ?? new Date().getFullYear();
     const now = new Date();
@@ -123,7 +144,50 @@ export class AnalyticsService {
     let totalCount = 0;
     let totalAmount = 0;
 
-    if (granularity === "week") {
+    if (granularity === "day") {
+      const DAYS = 31;
+      const days = getLastDaysColombia(DAYS);
+      for (const { label, start, end } of days) {
+        const sales = await this.saleModel
+          .find({ DateSale: { $gte: start, $lt: end } })
+          .lean()
+          .exec();
+
+        const saleIds = sales.map(s => s._id);
+        const details = await this.saleDetailModel
+          .find({ saleId: { $in: saleIds } })
+          .populate("beverageId", "type")
+          .lean()
+          .exec();
+
+        let dayCount = 0;
+        let dayAmount = 0;
+
+        for (const d of details) {
+          const beverage = d.beverageId as { type?: DrinkType } | null;
+          const type = beverage?.type ?? DrinkType.OTHER;
+          const qty = Number(d.quantity);
+          const amt = Number(d.subtotal);
+
+          if (!breakdownMap.has(type)) breakdownMap.set(type, { count: 0, amount: 0 });
+          const entry = breakdownMap.get(type)!;
+          entry.count += qty;
+          entry.amount += amt;
+          dayCount += qty;
+          dayAmount += amt;
+          totalCount += qty;
+          totalAmount += amt;
+        }
+
+        series.push({
+          month: 0,
+          year: targetYear,
+          label,
+          count: dayCount,
+          amount: Number(dayAmount.toFixed(2)),
+        });
+      }
+    } else if (granularity === "week") {
       const weeks = getWeeksInYearUpToToday(targetYear);
       for (const { weekIndex, start, end, label } of weeks) {
         const sales = await this.saleModel
@@ -243,6 +307,194 @@ export class AnalyticsService {
     };
   }
 
+  async getSalesByBeverage(
+    year?: number,
+    granularity: "month" | "week" | "day" = "month",
+  ): Promise<SalesByBeverageDto> {
+    const targetYear = year ?? new Date().getFullYear();
+    const now = new Date();
+    const isCurrentYear = targetYear === now.getFullYear();
+    const monthNames = [
+      "Ene",
+      "Feb",
+      "Mar",
+      "Abr",
+      "May",
+      "Jun",
+      "Jul",
+      "Ago",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dic",
+    ];
+
+    type BeverageEntry = {
+      name: string;
+      totalCount: number;
+      totalAmount: number;
+      series: Array<{ month: number; year: number; label: string; count: number; amount: number }>;
+    };
+    const byBeverage = new Map<string, BeverageEntry>();
+    let totalCount = 0;
+    let totalAmount = 0;
+
+    const pushPoint = (
+      beverageId: string,
+      name: string,
+      label: string,
+      month: number,
+      pointYear: number,
+      count: number,
+      amount: number,
+    ) => {
+      if (!byBeverage.has(beverageId)) {
+        byBeverage.set(beverageId, { name, totalCount: 0, totalAmount: 0, series: [] });
+      }
+      const entry = byBeverage.get(beverageId)!;
+      entry.totalCount += count;
+      entry.totalAmount += amount;
+      entry.series.push({
+        month,
+        year: pointYear,
+        label,
+        count,
+        amount: Number(amount.toFixed(2)),
+      });
+    };
+
+    if (granularity === "day") {
+      const days = getLastDaysColombia(31);
+      for (const { label, start, end } of days) {
+        const sales = await this.saleModel
+          .find({ DateSale: { $gte: start, $lt: end } })
+          .lean()
+          .exec();
+        const saleIds = sales.map(s => s._id);
+        const details = await this.saleDetailModel
+          .find({ saleId: { $in: saleIds } })
+          .populate("beverageId", "name")
+          .lean()
+          .exec();
+
+        const dayByBeverage = new Map<string, { name: string; count: number; amount: number }>();
+        for (const d of details) {
+          const beverage = d.beverageId as { _id: unknown; name?: string } | null;
+          if (!beverage?._id) continue;
+          const rawId = beverage._id;
+          const bid =
+            typeof rawId === "string" ? rawId : (rawId as { toString(): string }).toString();
+          const name = beverage.name ?? "Sin nombre";
+          const qty = Number(d.quantity);
+          const amt = Number(d.subtotal);
+          if (!dayByBeverage.has(bid)) dayByBeverage.set(bid, { name, count: 0, amount: 0 });
+          const e = dayByBeverage.get(bid)!;
+          e.count += qty;
+          e.amount += amt;
+          totalCount += qty;
+          totalAmount += amt;
+        }
+        for (const [bid, { name, count, amount }] of dayByBeverage) {
+          pushPoint(bid, name, label, 0, targetYear, count, amount);
+        }
+      }
+    } else if (granularity === "week") {
+      const weeks = getWeeksInYearUpToToday(targetYear);
+      for (const { weekIndex, start, end, label } of weeks) {
+        const sales = await this.saleModel
+          .find({ DateSale: { $gte: start, $lt: end } })
+          .lean()
+          .exec();
+        const saleIds = sales.map(s => s._id);
+        const details = await this.saleDetailModel
+          .find({ saleId: { $in: saleIds } })
+          .populate("beverageId", "name")
+          .lean()
+          .exec();
+
+        const weekByBeverage = new Map<string, { name: string; count: number; amount: number }>();
+        for (const d of details) {
+          const beverage = d.beverageId as { _id: unknown; name?: string } | null;
+          if (!beverage?._id) continue;
+          const rawId = beverage._id;
+          const bid =
+            typeof rawId === "string" ? rawId : (rawId as { toString(): string }).toString();
+          const name = beverage.name ?? "Sin nombre";
+          const qty = Number(d.quantity);
+          const amt = Number(d.subtotal);
+          if (!weekByBeverage.has(bid)) weekByBeverage.set(bid, { name, count: 0, amount: 0 });
+          const e = weekByBeverage.get(bid)!;
+          e.count += qty;
+          e.amount += amt;
+          totalCount += qty;
+          totalAmount += amt;
+        }
+        for (const [bid, { name, count, amount }] of weekByBeverage) {
+          pushPoint(bid, name, label, weekIndex, targetYear, count, amount);
+        }
+      }
+    } else {
+      const allMonths = getMonthsInYear(targetYear);
+      const months = isCurrentYear
+        ? allMonths.filter(m => m.month <= now.getMonth() + 1)
+        : allMonths;
+      for (const { month, start, end } of months) {
+        const sales = await this.saleModel
+          .find({ DateSale: { $gte: start, $lt: end } })
+          .lean()
+          .exec();
+        const saleIds = sales.map(s => s._id);
+        const details = await this.saleDetailModel
+          .find({ saleId: { $in: saleIds } })
+          .populate("beverageId", "name")
+          .lean()
+          .exec();
+
+        const monthByBeverage = new Map<string, { name: string; count: number; amount: number }>();
+        for (const d of details) {
+          const beverage = d.beverageId as { _id: unknown; name?: string } | null;
+          if (!beverage?._id) continue;
+          const rawId = beverage._id;
+          const bid =
+            typeof rawId === "string" ? rawId : (rawId as { toString(): string }).toString();
+          const name = beverage.name ?? "Sin nombre";
+          const qty = Number(d.quantity);
+          const amt = Number(d.subtotal);
+          if (!monthByBeverage.has(bid)) monthByBeverage.set(bid, { name, count: 0, amount: 0 });
+          const e = monthByBeverage.get(bid)!;
+          e.count += qty;
+          e.amount += amt;
+          totalCount += qty;
+          totalAmount += amt;
+        }
+        for (const [bid, { name, count, amount }] of monthByBeverage) {
+          pushPoint(bid, name, monthNames[month - 1], month, targetYear, count, amount);
+        }
+      }
+    }
+
+    const breakdown: BeverageBreakdownItem[] = Array.from(byBeverage.entries())
+      .map(([beverageId, { name, totalCount: c, totalAmount: a, series }]) => ({
+        beverageId,
+        name,
+        count: c,
+        amount: Number(a.toFixed(2)),
+        percentage: totalCount > 0 ? Number(((c / totalCount) * 100).toFixed(1)) : 0,
+        series: series.sort((x, y) => {
+          if (granularity === "month") return x.month - y.month;
+          if (granularity === "week") return x.month - y.month;
+          return 0;
+        }),
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      totalTicketSales: totalCount,
+      totalAmount: Number(totalAmount.toFixed(2)),
+      breakdown,
+    };
+  }
+
   async getTopSellers(year?: number): Promise<TopSellerDto[]> {
     const targetYear = year ?? new Date().getFullYear();
     const start = new Date(targetYear, 0, 1, 0, 0, 0, 0);
@@ -298,7 +550,8 @@ export class AnalyticsService {
   }
 
   async getTransactions(): Promise<TransactionsDto> {
-    const { start, end } = getTodayRange();
+    const dateStr = todayColombia();
+    const { start, end } = getDayRangeColombia(dateStr);
 
     const count = await this.saleModel
       .countDocuments({ DateSale: { $gte: start, $lt: end } })

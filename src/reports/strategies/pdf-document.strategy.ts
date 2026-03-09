@@ -1,9 +1,21 @@
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { Injectable } from "@nestjs/common";
-import PDFDocument from "pdfkit";
 import { IDocumentGeneratorStrategy } from "./document-generator.interface";
 import { DailyClosingDataDto } from "../dto/daily-closing-data.dto";
 
-type PDFDoc = InstanceType<typeof PDFDocument>;
+const PDFDocument = require("pdfkit");
+
+type PDFDoc = ReturnType<typeof PDFDocument>;
+
+function formatGeneratedAt(value: Date | string | undefined): string {
+  if (value == null) return new Date().toISOString();
+  if (typeof value === "string") return value;
+  try {
+    return value.toLocaleString("es-CO");
+  } catch {
+    return value.toISOString();
+  }
+}
 
 const MARGIN = 50;
 const PAGE_WIDTH = 595;
@@ -12,6 +24,22 @@ const ROW_HEIGHT = 22;
 const HEADER_FONT_SIZE = 18;
 const BODY_FONT_SIZE = 10;
 const FOOTER_FONT_SIZE = 9;
+/** Espacio entre el bloque de totales y el footer */
+const FOOTER_TOP_MARGIN = 24;
+
+/** Paleta alineada con la app (globals.css): marca roja, grises, superficies */
+
+const STYLES = {
+  brandPrimary: "#DC2626",
+  brandAccent: "#FEF2F2",
+  textPrimary: "#111827",
+  textSecondary: "#6B7280",
+  textMuted: "#9CA3AF",
+  bgSurface: "#F9FAFB",
+  bgBase: "#FFFFFF",
+  border: "#E5E7EB",
+  borderFocus: "#DC2626",
+} as const;
 
 /**
  * Estrategia concreta: genera el documento de cierre del día en PDF con estilos.
@@ -23,6 +51,15 @@ export class PdfDocumentStrategy implements IDocumentGeneratorStrategy {
   readonly fileExtension = "pdf";
 
   async generate(data: DailyClosingDataDto): Promise<Buffer> {
+    const safeData: DailyClosingDataDto = {
+      date: data?.date ?? new Date().toISOString().split("T")[0],
+      generatedAt: data?.generatedAt ?? new Date(),
+      items: Array.isArray(data?.items) ? data.items : [],
+      totalQuantity: Number(data?.totalQuantity) || 0,
+      totalAmount: Number(data?.totalAmount) || 0,
+      totalTransactions: Number(data?.totalTransactions) || 0,
+    };
+
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ margin: MARGIN, size: "A4" });
       const chunks: Buffer[] = [];
@@ -31,12 +68,17 @@ export class PdfDocumentStrategy implements IDocumentGeneratorStrategy {
       doc.on("end", () => resolve(Buffer.concat(chunks)));
       doc.on("error", reject);
 
-      this.writeHeader(doc, data);
-      doc.moveDown(0.5);
-      this.writeTable(doc, data);
-      doc.moveDown(1);
-      this.writeTotals(doc, data);
-      this.writeFooter(doc, data);
+      try {
+        this.writeHeader(doc, safeData);
+        doc.moveDown(0.5);
+        this.writeTable(doc, safeData);
+        doc.moveDown(1);
+        this.writeTotals(doc, safeData);
+        this.writeFooter(doc, safeData);
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)));
+        return;
+      }
 
       doc.end();
     });
@@ -45,21 +87,21 @@ export class PdfDocumentStrategy implements IDocumentGeneratorStrategy {
   private writeHeader(doc: PDFDoc, data: DailyClosingDataDto): void {
     doc
       .fontSize(HEADER_FONT_SIZE)
-      .fillColor("#1a365d")
+      .fillColor(STYLES.brandPrimary)
       .font("Helvetica-Bold")
       .text("Cierre del día", { align: "center" });
 
     doc.moveDown(0.3);
     doc
       .fontSize(BODY_FONT_SIZE)
-      .fillColor("#4a5568")
+      .fillColor(STYLES.textSecondary)
       .font("Helvetica")
       .text(`Fecha del cierre: ${data.date}`, { align: "center" });
 
     doc
       .fontSize(FOOTER_FONT_SIZE)
-      .fillColor("#718096")
-      .text(`Generado: ${data.generatedAt.toLocaleString("es-CO")}`, {
+      .fillColor(STYLES.textMuted)
+      .text(`Generado: ${formatGeneratedAt(data.generatedAt)}`, {
         align: "center",
       });
   }
@@ -73,16 +115,16 @@ export class PdfDocumentStrategy implements IDocumentGeneratorStrategy {
     };
     let y = doc.y;
 
-    // Encabezado de tabla
+    // Encabezado de tabla (bg-surface, border, text-primary)
     doc
       .fontSize(BODY_FONT_SIZE)
-      .fillColor("#2d3748")
+      .fillColor(STYLES.textPrimary)
       .font("Helvetica-Bold")
       .rect(MARGIN, y, CONTENT_WIDTH, ROW_HEIGHT)
-      .fillAndStroke("#e2e8f0", "#cbd5e0");
+      .fillAndStroke(STYLES.bgSurface, STYLES.border);
 
     doc
-      .fillColor("#1a202c")
+      .fillColor(STYLES.textPrimary)
       .text("Producto", MARGIN + 8, y + 6, { width: colWidths.product })
       .text("Cant.", MARGIN + colWidths.product + 8, y + 6, {
         width: colWidths.qty,
@@ -101,22 +143,25 @@ export class PdfDocumentStrategy implements IDocumentGeneratorStrategy {
 
     y += ROW_HEIGHT;
 
-    doc.font("Helvetica").fillColor("#2d3748");
+    doc.font("Helvetica").fillColor(STYLES.textPrimary);
 
     if (data.items.length === 0) {
-      doc.fontSize(BODY_FONT_SIZE).text("No hay ventas registradas para este día.", MARGIN, y + 6);
+      doc
+        .fontSize(BODY_FONT_SIZE)
+        .fillColor(STYLES.textSecondary)
+        .text("No hay ventas registradas para este día.", MARGIN, y + 6);
       doc.y = y + ROW_HEIGHT;
       return;
     }
 
     for (let i = 0; i < data.items.length; i++) {
       const item = data.items[i];
-      const fill = i % 2 === 0 ? "#f7fafc" : "#edf2f7";
-      doc.rect(MARGIN, y, CONTENT_WIDTH, ROW_HEIGHT).fillAndStroke(fill, "#e2e8f0");
+      const fill = i % 2 === 0 ? STYLES.bgBase : STYLES.bgSurface;
+      doc.rect(MARGIN, y, CONTENT_WIDTH, ROW_HEIGHT).fillAndStroke(fill, STYLES.border);
 
       doc
         .fontSize(BODY_FONT_SIZE)
-        .fillColor("#2d3748")
+        .fillColor(STYLES.textPrimary)
         .text(item.beverageName, MARGIN + 8, y + 6, { width: colWidths.product })
         .text(String(item.quantity), MARGIN + colWidths.product + 8, y + 6, {
           width: colWidths.qty,
@@ -146,43 +191,53 @@ export class PdfDocumentStrategy implements IDocumentGeneratorStrategy {
 
   private writeTotals(doc: PDFDoc, data: DailyClosingDataDto): void {
     const y = doc.y;
+    const totalsBoxHeight = 78;
+    const line1Y = y + 14;
+    const line2Y = y + 36;
+    const line3Y = y + 58;
+
     doc
       .font("Helvetica-Bold")
       .fontSize(BODY_FONT_SIZE)
-      .fillColor("#1a365d")
-      .rect(MARGIN, y, CONTENT_WIDTH, ROW_HEIGHT * 1.2)
-      .fillAndStroke("#edf2f7", "#2b6cb0");
+      .fillColor(STYLES.brandPrimary)
+      .rect(MARGIN, y, CONTENT_WIDTH, totalsBoxHeight)
+      .fillAndStroke(STYLES.brandAccent, STYLES.borderFocus);
+
+    const labelsWidth = CONTENT_WIDTH * 0.58;
+    const valuesStart = MARGIN + labelsWidth;
+    const valuesWidth = CONTENT_WIDTH * 0.38;
 
     doc
-      .text("Total unidades:", MARGIN + 8, y + 10, { width: CONTENT_WIDTH * 0.5 })
-      .text(String(data.totalQuantity), MARGIN + CONTENT_WIDTH * 0.5, y + 10, {
-        width: CONTENT_WIDTH * 0.5,
+      .fillColor(STYLES.textPrimary)
+      .text("Total unidades:", MARGIN + 8, line1Y, { width: labelsWidth })
+      .text(String(data.totalQuantity), valuesStart, line1Y, {
+        width: valuesWidth,
         align: "right",
       });
 
     doc
-      .text("Total ventas (transacciones):", MARGIN + 8, y + 28, { width: CONTENT_WIDTH * 0.5 })
-      .text(String(data.totalTransactions), MARGIN + CONTENT_WIDTH * 0.5, y + 28, {
-        width: CONTENT_WIDTH * 0.5,
+      .text("Total ventas (transacciones):", MARGIN + 8, line2Y, { width: labelsWidth })
+      .text(String(data.totalTransactions), valuesStart, line2Y, {
+        width: valuesWidth,
         align: "right",
       });
 
     doc
-      .text("Total monto (COP):", MARGIN + 8, y + 46, { width: CONTENT_WIDTH * 0.5 })
-      .text(this.formatCop(data.totalAmount), MARGIN + CONTENT_WIDTH * 0.5, y + 46, {
-        width: CONTENT_WIDTH * 0.5,
+      .text("Total monto (COP):", MARGIN + 8, line3Y, { width: labelsWidth })
+      .text(this.formatCop(data.totalAmount), valuesStart, line3Y, {
+        width: valuesWidth,
         align: "right",
       });
 
-    doc.y = y + ROW_HEIGHT * 1.2;
+    doc.y = y + totalsBoxHeight + FOOTER_TOP_MARGIN;
   }
 
   private writeFooter(doc: PDFDoc, data: DailyClosingDataDto): void {
     doc
       .font("Helvetica")
       .fontSize(FOOTER_FONT_SIZE)
-      .fillColor("#718096")
-      .text(`Documento de cierre del día — ${data.date} — Billar Drinks Colombia`, MARGIN, doc.y, {
+      .fillColor(STYLES.textMuted)
+      .text(`Documento de cierre del día — ${data.date} — los Amigos`, MARGIN, doc.y, {
         align: "center",
         width: CONTENT_WIDTH,
       });

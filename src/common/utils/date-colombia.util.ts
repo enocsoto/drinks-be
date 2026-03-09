@@ -26,3 +26,20 @@ export function getDayRangeColombia(dateStr: string): { start: Date; end: Date }
   const end = dayjs.tz(`${dateStr}T00:00:00`, ZONE_COLOMBIA).add(1, "day").toDate();
   return { start, end };
 }
+
+/**
+ * Últimos N días en Colombia (incluye hoy). Para gráficos por día.
+ * Orden: del más antiguo al más reciente (índice 0 = hace N días).
+ */
+export function getLastDaysColombia(
+  n: number,
+): Array<{ dateStr: string; label: string; start: Date; end: Date }> {
+  const out: Array<{ dateStr: string; label: string; start: Date; end: Date }> = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = dayjs().tz(ZONE_COLOMBIA).subtract(i, "day");
+    const dateStr = String(d.format("YYYY-MM-DD"));
+    const { start, end } = getDayRangeColombia(dateStr);
+    out.push({ dateStr, label: d.format("D/M"), start, end });
+  }
+  return out;
+}

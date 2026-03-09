@@ -4,12 +4,13 @@ import { Model } from "mongoose";
 import { Sale, SaleDocument } from "../sales/schemas/sale.schema";
 import { SaleDetail, SaleDetailDocument } from "../sales/schemas/sale-detail.schema";
 import { SaleDetailType } from "../sales/enum/sale-detail-type.enum";
-import { getDayRange } from "../common/utils/date.util";
+import { SALE_DETAIL_TYPE_LABELS } from "../sales/enum/sale-detail-type.enum";
+import { getDayRangeColombia } from "../common/utils/date-colombia.util";
 import { DailyClosingDataDto, DailyClosingItemDto } from "./dto/daily-closing-data.dto";
 
 /**
  * Servicio con responsabilidad única: obtener los datos agregados del cierre del día
- * (cantidad de bebidas vendidas por producto). No conoce formatos de documento (SOLID).
+ * (todos los productos vendidos: bebidas, guantes, juegos). No conoce formatos de documento (SOLID).
  */
 @Injectable()
 export class DailyClosingService {
@@ -19,58 +20,72 @@ export class DailyClosingService {
   ) {}
 
   /**
-   * Obtiene los datos del cierre del día: productos vendidos (solo bebidas),
-   * cantidades, precios y totales. Reutiliza getDayRange (DRY).
+   * Obtiene los datos del cierre del día: todos los productos vendidos (bebidas, guantes, juegos),
+   * cantidades, precios y totales. Usa hora Colombia para coincidir con ventas y analytics.
    */
   async getDataForDate(date: string): Promise<DailyClosingDataDto> {
-    const { start, end } = getDayRange(date);
+    const { start, end } = getDayRangeColombia(date);
 
     const sales = await this.saleModel
-      .find({ DateSale: { $gte: start, $lt: end } })
+      .find({
+        $or: [
+          { saleDate: date },
+          { saleDate: { $exists: false }, DateSale: { $gte: start, $lt: end } },
+        ],
+      })
       .lean()
       .exec();
 
     const saleIds = sales.map(s => s._id);
     const details = await this.saleDetailModel
-      .find({
-        saleId: { $in: saleIds },
-        type: SaleDetailType.BEVERAGE,
-        beverageId: { $exists: true, $ne: null },
-      })
+      .find({ saleId: { $in: saleIds } })
       .populate("beverageId", "name")
       .lean()
       .exec();
 
-    const byBeverage = new Map<
+    const byProduct = new Map<
       string,
       { name: string; quantity: number; unitPrice: number; subtotal: number }
     >();
 
     for (const d of details) {
-      const beverage = d.beverageId as unknown as { _id: unknown; name: string } | null;
-      const name = beverage?.name ?? "Bebida sin nombre";
-      const ref = beverage?._id ?? d.beverageId;
-      const key =
-        ref == null
-          ? name
-          : typeof ref === "string"
-            ? ref
-            : typeof (ref as { toString?: () => string }).toString === "function"
-              ? (ref as { toString: () => string }).toString()
-              : name;
+      const type = d.type ?? SaleDetailType.BEVERAGE;
+      let name: string;
+      let key: string;
+
+      if (type === SaleDetailType.BEVERAGE && d.beverageId) {
+        const beverage = d.beverageId as unknown as { _id: unknown; name: string } | null;
+        name = beverage?.name ?? "Bebida sin nombre";
+        const ref = beverage?._id ?? d.beverageId;
+        key =
+          ref == null
+            ? name
+            : typeof ref === "string"
+              ? ref
+              : typeof (ref as { toString?: () => string }).toString === "function"
+                ? (ref as { toString: () => string }).toString()
+                : name;
+      } else {
+        const label = SALE_DETAIL_TYPE_LABELS[type] ?? type;
+        const desc =
+          typeof d.description === "string" && d.description.trim() ? d.description.trim() : "";
+        name = desc ? `${label}: ${desc}` : label;
+        key = `${type}_${desc || label}`;
+      }
+
       const qty = Number(d.quantity);
       const unitPrice = Number(d.unitPrice);
       const subtotal = Number(d.subtotal);
 
-      if (!byBeverage.has(key)) {
-        byBeverage.set(key, { name, quantity: 0, unitPrice, subtotal: 0 });
+      if (!byProduct.has(key)) {
+        byProduct.set(key, { name, quantity: 0, unitPrice, subtotal: 0 });
       }
-      const entry = byBeverage.get(key)!;
+      const entry = byProduct.get(key)!;
       entry.quantity += qty;
       entry.subtotal += subtotal;
     }
 
-    const items: DailyClosingItemDto[] = Array.from(byBeverage.values()).map(
+    const items: DailyClosingItemDto[] = Array.from(byProduct.values()).map(
       ({ name, quantity, unitPrice, subtotal }) => ({
         beverageName: name,
         quantity,
