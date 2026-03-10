@@ -39,6 +39,16 @@ export class CreatePendingPaymentDto {
   amount: number;
 
   @ApiPropertyOptional({
+    example: 0,
+    description: "Monto ya pagado en COP (abonos). Por defecto 0.",
+  })
+  @IsOptional()
+  @IsNumber({}, { message: "amountPaid debe ser un número." })
+  @Min(0, { message: "amountPaid no puede ser negativa." })
+  @Type(() => Number)
+  amountPaid?: number;
+
+  @ApiPropertyOptional({
     description: "Tipos de bebida (pueden ser varios)",
     enum: DrinkType,
     isArray: true,

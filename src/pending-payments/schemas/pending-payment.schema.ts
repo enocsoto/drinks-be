@@ -20,6 +20,10 @@ export class PendingPayment {
   @Prop({ type: Number, required: true, min: 0 })
   amount: number;
 
+  /** Monto ya pagado en COP (abonos). Saldo pendiente = amount - amountPaid. */
+  @Prop({ type: Number, default: 0, min: 0 })
+  amountPaid: number;
+
   /** Tipos de bebida asociados (pueden ser varios). */
   @Prop({ type: [String], enum: Object.values(DrinkType), default: [] })
   drinkTypes: DrinkType[];

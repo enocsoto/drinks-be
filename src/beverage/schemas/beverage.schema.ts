@@ -28,6 +28,14 @@ export class Beverage {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  /** Cantidad en inventario (unidades disponibles) */
+  @Prop({ type: Number, default: 0 })
+  stock: number;
+
+  /** Precio de coste unitario en COP (para calcular margen de ganancia). Ej: canasta 68.000 / 38 ≈ 1.800 */
+  @Prop({ type: Number, default: 0 })
+  costPrice: number;
 }
 
 export const BeverageSchema = SchemaFactory.createForClass(Beverage);

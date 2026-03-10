@@ -23,6 +23,7 @@
     "prepare": "husky install"
   },
   "dependencies": {
+    "@fastify/multipart": "^9.4.0",
     "@fastify/static": "^8.2.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
@@ -45,7 +46,8 @@
     "pdfkit": "^0.17.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@commitlint/cli": "^17.8.1",

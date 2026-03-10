@@ -7,13 +7,14 @@ export interface BeverageSeedItem {
   type: DrinkType;
   containerType: ContainerType;
   containerSize: string;
+  stock?: number;
+  costPrice?: number;
 }
 
 const BEVERAGES_IMG_BASE = "/beverages";
 
 /**
  * Ruta de imagen según nombre y envase. Archivos en drinks-fe/public/beverages/.
- * Solo devuelve ruta si existe imagen para esa bebida; si no, "".
  */
 export function getBeverageImageUrl(name: string, containerType: ContainerType): string {
   const n = name.trim().toLowerCase();
@@ -25,6 +26,11 @@ export function getBeverageImageUrl(name: string, containerType: ContainerType):
   if (n.includes("aguila negra")) {
     return containerType === ContainerType.LATA_350
       ? `${BEVERAGES_IMG_BASE}/aguila-negra-lata.png`
+      : "";
+  }
+  if (n.includes("aguila") && n.includes("light")) {
+    return containerType === ContainerType.LATA_350
+      ? `${BEVERAGES_IMG_BASE}/aguila-ligth-lata.png`
       : "";
   }
   if (n === "aguila" && containerType === ContainerType.LATA_350) {
@@ -41,234 +47,172 @@ export function getBeverageImageUrl(name: string, containerType: ContainerType):
 }
 
 /**
- * Bebidas típicas de billar en Colombia (cervezas y otras).
- * Precios referenciales en COP; envases según presentaciones habituales.
+ * Bebidas del billar (Colombia).
+ * Precios y stock según compras: canastas, pacas, cajas.
+ * Cervezas lata/botella: 3000 (excepto Club Colombia lata: 4000).
  */
 export const BEVERAGE_SEED_DATA: BeverageSeedItem[] = [
-  // Aguila
+  // --- CERVEZAS BOTELLA (canasta x 38) — 3000 c/u ---
+  // Coste canasta ~68.000 → costPrice ≈ 1800
   {
-    name: "Aguila",
-    price: 2800,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.LATA_350,
-    containerSize: "350 ml",
-  },
-  {
-    name: "Aguila",
-    price: 2200,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.BOTELLA_250,
-    containerSize: "250 ml",
-  },
-  {
-    name: "Aguila",
-    price: 5500,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.LITRO,
-    containerSize: "1 L",
-  },
-  // Aguila Negra
-  {
-    name: "Aguila Negra",
-    price: 3200,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.LATA_350,
-    containerSize: "350 ml",
-  },
-  {
-    name: "Aguila Negra",
-    price: 2600,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.BOTELLA_250,
-    containerSize: "250 ml",
-  },
-  {
-    name: "Aguila Negra",
-    price: 6500,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.LITRO,
-    containerSize: "1 L",
-  },
-  // Poker
-  {
-    name: "Poker",
-    price: 2700,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.LATA_350,
-    containerSize: "350 ml",
-  },
-  {
-    name: "Poker",
-    price: 2100,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.BOTELLA_250,
-    containerSize: "250 ml",
-  },
-  {
-    name: "Poker",
-    price: 5200,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.LITRO,
-    containerSize: "1 L",
-  },
-  // Club Colombia
-  {
-    name: "Club Colombia",
-    price: 3800,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.LATA_350,
-    containerSize: "350 ml",
-  },
-  {
-    name: "Club Colombia",
-    price: 3500,
+    name: "Aguila Light",
+    price: 3000,
     type: DrinkType.ALCOHOLIC,
     containerType: ContainerType.BOTELLA_330,
     containerSize: "330 ml",
+    stock: 38,
+    costPrice: 1800,
   },
   {
-    name: "Club Colombia Negra",
+    name: "Aguila Negra",
+    price: 3000,
+    type: DrinkType.ALCOHOLIC,
+    containerType: ContainerType.BOTELLA_330,
+    containerSize: "330 ml",
+    stock: 38,
+    costPrice: 1800,
+  },
+  {
+    name: "Poker",
+    price: 3000,
+    type: DrinkType.ALCOHOLIC,
+    containerType: ContainerType.BOTELLA_330,
+    containerSize: "330 ml",
+    stock: 38,
+    costPrice: 1800,
+  },
+  {
+    name: "Costeñita",
+    price: 3000,
+    type: DrinkType.ALCOHOLIC,
+    containerType: ContainerType.BOTELLA_330,
+    containerSize: "330 ml",
+    stock: 38,
+    costPrice: 1800,
+  },
+
+  // --- CORONA (caja 24) — 4000 c/u ---
+  // Coste 68.000 / 24 ≈ 2833
+  {
+    name: "Corona Pequeña",
+    price: 4000,
+    type: DrinkType.ALCOHOLIC,
+    containerType: ContainerType.BOTELLA_250,
+    containerSize: "269 ml",
+    stock: 24,
+    costPrice: 2833,
+  },
+  {
+    name: "Corona Grande",
+    price: 4000,
+    type: DrinkType.ALCOHOLIC,
+    containerType: ContainerType.BOTELLA_330,
+    containerSize: "330 ml",
+    stock: 24,
+    costPrice: 2833,
+  },
+
+  // --- CERVEZAS LATA (paca x 24) — 3000 c/u (Club Colombia: 4000) ---
+  {
+    name: "Budweiser",
+    price: 3000,
+    type: DrinkType.ALCOHOLIC,
+    containerType: ContainerType.LATA_350,
+    containerSize: "350 ml",
+    stock: 24,
+    costPrice: 1800,
+  },
+  {
+    name: "Aguila Negra",
+    price: 3000,
+    type: DrinkType.ALCOHOLIC,
+    containerType: ContainerType.LATA_350,
+    containerSize: "350 ml",
+    stock: 24,
+    costPrice: 1800,
+  },
+  {
+    name: "Aguila Light",
+    price: 3000,
+    type: DrinkType.ALCOHOLIC,
+    containerType: ContainerType.LATA_350,
+    containerSize: "350 ml",
+    stock: 24,
+    costPrice: 1800,
+  },
+  {
+    name: "Club Colombia",
+    price: 4000,
+    type: DrinkType.ALCOHOLIC,
+    containerType: ContainerType.BOTELLA_330,
+    containerSize: "330 ml",
+    stock: 24,
+    costPrice: 1800,
+  },
+  {
+    name: "Club Colombia",
     price: 4000,
     type: DrinkType.ALCOHOLIC,
     containerType: ContainerType.LATA_350,
     containerSize: "350 ml",
+    stock: 24,
+    costPrice: 1800,
   },
-  // Costena
-  {
-    name: "Costena",
-    price: 2600,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.LATA_350,
-    containerSize: "350 ml",
-  },
-  {
-    name: "Costena",
-    price: 5000,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.LITRO,
-    containerSize: "1 L",
-  },
-  // Redds / otras
-  {
-    name: "Redds",
-    price: 3200,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.LATA_350,
-    containerSize: "350 ml",
-  },
-  // Gaseosas (500 ml, 1 L, 1.5 L, 2 L, 2.5 L)
+
+  // --- GASEOSA (caja 30) — coste 25.000 → costPrice 833 ---
+  // Precio venta estimado 2500
   {
     name: "Coca-Cola",
     price: 2500,
     type: DrinkType.SODA,
     containerType: ContainerType.BOTELLA_250,
     containerSize: "250 ml",
+    stock: 30,
+    costPrice: 833,
   },
-  {
-    name: "Coca-Cola",
-    price: 3500,
-    type: DrinkType.SODA,
-    containerType: ContainerType.LATA_350,
-    containerSize: "350 ml",
-  },
-  {
-    name: "Coca-Cola",
-    price: 4500,
-    type: DrinkType.SODA,
-    containerType: ContainerType.BOTELLA_500,
-    containerSize: "500 ml",
-  },
-  {
-    name: "Coca-Cola",
-    price: 5500,
-    type: DrinkType.SODA,
-    containerType: ContainerType.LITRO,
-    containerSize: "1 L",
-  },
-  {
-    name: "Coca-Cola",
-    price: 7500,
-    type: DrinkType.SODA,
-    containerType: ContainerType.LITRO_1_5,
-    containerSize: "1.5 L",
-  },
-  {
-    name: "Coca-Cola",
-    price: 9500,
-    type: DrinkType.SODA,
-    containerType: ContainerType.LITRO_2,
-    containerSize: "2 L",
-  },
-  {
-    name: "Coca-Cola",
-    price: 11000,
-    type: DrinkType.SODA,
-    containerType: ContainerType.LITRO_2_5,
-    containerSize: "2.5 L",
-  },
-  {
-    name: "Postobon",
-    price: 4200,
-    type: DrinkType.SODA,
-    containerType: ContainerType.BOTELLA_500,
-    containerSize: "500 ml",
-  },
-  {
-    name: "Postobon",
-    price: 5200,
-    type: DrinkType.SODA,
-    containerType: ContainerType.LITRO,
-    containerSize: "1 L",
-  },
-  {
-    name: "Postobon",
-    price: 7000,
-    type: DrinkType.SODA,
-    containerType: ContainerType.LITRO_1_5,
-    containerSize: "1.5 L",
-  },
-  {
-    name: "Postobon",
-    price: 9000,
-    type: DrinkType.SODA,
-    containerType: ContainerType.LITRO_2,
-    containerSize: "2 L",
-  },
-  {
-    name: "Postobon",
-    price: 10500,
-    type: DrinkType.SODA,
-    containerType: ContainerType.LITRO_2_5,
-    containerSize: "2.5 L",
-  },
-  {
-    name: "Pony Malta",
-    price: 2000,
-    type: DrinkType.SODA,
-    containerType: ContainerType.BOTELLA_330,
-    containerSize: "330 ml",
-  },
-  // Aguardiente
-  {
-    name: "Aguardiente",
-    price: 8000,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.BOTELLA_375,
-    containerSize: "375 ml",
-  },
-  {
-    name: "Aguardiente",
-    price: 15000,
-    type: DrinkType.ALCOHOLIC,
-    containerType: ContainerType.OTRO,
-    containerSize: "750 ml",
-  },
-  // Agua
+
+  // --- AGUA (paca 20 / 24 / 12) ---
+  // Paca 20 unidades
   {
     name: "Agua Cristal",
     price: 1500,
     type: DrinkType.WATER,
     containerType: ContainerType.BOTELLA_330,
     containerSize: "330 ml",
+    stock: 20,
+    costPrice: 500,
+  },
+  // Grande (1L o 2L) — 2000 c/u, por 24 o 12
+  {
+    name: "Agua Cristal",
+    price: 2000,
+    type: DrinkType.WATER,
+    containerType: ContainerType.LITRO,
+    containerSize: "1 L",
+    stock: 24,
+    costPrice: 600,
+  },
+
+  // --- GATORADE — 5000 ---
+  {
+    name: "Gatorade",
+    price: 5000,
+    type: DrinkType.SODA,
+    containerType: ContainerType.BOTELLA_500,
+    containerSize: "500 ml",
+    stock: 12,
+    costPrice: 2500,
+  },
+
+  // --- AGUARDIENTE LIMOCINA GARRAFÓN — 75.000 ---
+  // Coste 58.000
+  {
+    name: "Aguardiente Limocina",
+    price: 75000,
+    type: DrinkType.ALCOHOLIC,
+    containerType: ContainerType.OTRO,
+    containerSize: "Garrafón",
+    stock: 1,
+    costPrice: 58000,
   },
 ];

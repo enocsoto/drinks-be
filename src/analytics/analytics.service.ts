@@ -55,6 +55,8 @@ export interface TransactionsDto {
 export interface BeverageBreakdownItem {
   beverageId: string;
   name: string;
+  containerType?: string;
+  containerSize?: string;
   count: number;
   amount: number;
   percentage: number;
@@ -331,6 +333,8 @@ export class AnalyticsService {
 
     type BeverageEntry = {
       name: string;
+      containerType?: string;
+      containerSize?: string;
       totalCount: number;
       totalAmount: number;
       series: Array<{ month: number; year: number; label: string; count: number; amount: number }>;
@@ -342,6 +346,8 @@ export class AnalyticsService {
     const pushPoint = (
       beverageId: string,
       name: string,
+      containerType: string | undefined,
+      containerSize: string | undefined,
       label: string,
       month: number,
       pointYear: number,
@@ -349,7 +355,14 @@ export class AnalyticsService {
       amount: number,
     ) => {
       if (!byBeverage.has(beverageId)) {
-        byBeverage.set(beverageId, { name, totalCount: 0, totalAmount: 0, series: [] });
+        byBeverage.set(beverageId, {
+          name,
+          containerType,
+          containerSize,
+          totalCount: 0,
+          totalAmount: 0,
+          series: [],
+        });
       }
       const entry = byBeverage.get(beverageId)!;
       entry.totalCount += count;
@@ -373,13 +386,27 @@ export class AnalyticsService {
         const saleIds = sales.map(s => s._id);
         const details = await this.saleDetailModel
           .find({ saleId: { $in: saleIds } })
-          .populate("beverageId", "name")
+          .populate("beverageId", "name containerType containerSize")
           .lean()
           .exec();
 
-        const dayByBeverage = new Map<string, { name: string; count: number; amount: number }>();
+        const dayByBeverage = new Map<
+          string,
+          {
+            name: string;
+            containerType?: string;
+            containerSize?: string;
+            count: number;
+            amount: number;
+          }
+        >();
         for (const d of details) {
-          const beverage = d.beverageId as { _id: unknown; name?: string } | null;
+          const beverage = d.beverageId as {
+            _id: unknown;
+            name?: string;
+            containerType?: string;
+            containerSize?: string;
+          } | null;
           if (!beverage?._id) continue;
           const rawId = beverage._id;
           const bid =
@@ -387,15 +414,22 @@ export class AnalyticsService {
           const name = beverage.name ?? "Sin nombre";
           const qty = Number(d.quantity);
           const amt = Number(d.subtotal);
-          if (!dayByBeverage.has(bid)) dayByBeverage.set(bid, { name, count: 0, amount: 0 });
+          if (!dayByBeverage.has(bid))
+            dayByBeverage.set(bid, {
+              name,
+              containerType: beverage.containerType,
+              containerSize: beverage.containerSize,
+              count: 0,
+              amount: 0,
+            });
           const e = dayByBeverage.get(bid)!;
           e.count += qty;
           e.amount += amt;
           totalCount += qty;
           totalAmount += amt;
         }
-        for (const [bid, { name, count, amount }] of dayByBeverage) {
-          pushPoint(bid, name, label, 0, targetYear, count, amount);
+        for (const [bid, { name, containerType, containerSize, count, amount }] of dayByBeverage) {
+          pushPoint(bid, name, containerType, containerSize, label, 0, targetYear, count, amount);
         }
       }
     } else if (granularity === "week") {
@@ -408,13 +442,27 @@ export class AnalyticsService {
         const saleIds = sales.map(s => s._id);
         const details = await this.saleDetailModel
           .find({ saleId: { $in: saleIds } })
-          .populate("beverageId", "name")
+          .populate("beverageId", "name containerType containerSize")
           .lean()
           .exec();
 
-        const weekByBeverage = new Map<string, { name: string; count: number; amount: number }>();
+        const weekByBeverage = new Map<
+          string,
+          {
+            name: string;
+            containerType?: string;
+            containerSize?: string;
+            count: number;
+            amount: number;
+          }
+        >();
         for (const d of details) {
-          const beverage = d.beverageId as { _id: unknown; name?: string } | null;
+          const beverage = d.beverageId as {
+            _id: unknown;
+            name?: string;
+            containerType?: string;
+            containerSize?: string;
+          } | null;
           if (!beverage?._id) continue;
           const rawId = beverage._id;
           const bid =
@@ -422,15 +470,32 @@ export class AnalyticsService {
           const name = beverage.name ?? "Sin nombre";
           const qty = Number(d.quantity);
           const amt = Number(d.subtotal);
-          if (!weekByBeverage.has(bid)) weekByBeverage.set(bid, { name, count: 0, amount: 0 });
+          if (!weekByBeverage.has(bid))
+            weekByBeverage.set(bid, {
+              name,
+              containerType: beverage.containerType,
+              containerSize: beverage.containerSize,
+              count: 0,
+              amount: 0,
+            });
           const e = weekByBeverage.get(bid)!;
           e.count += qty;
           e.amount += amt;
           totalCount += qty;
           totalAmount += amt;
         }
-        for (const [bid, { name, count, amount }] of weekByBeverage) {
-          pushPoint(bid, name, label, weekIndex, targetYear, count, amount);
+        for (const [bid, { name, containerType, containerSize, count, amount }] of weekByBeverage) {
+          pushPoint(
+            bid,
+            name,
+            containerType,
+            containerSize,
+            label,
+            weekIndex,
+            targetYear,
+            count,
+            amount,
+          );
         }
       }
     } else {
@@ -446,13 +511,27 @@ export class AnalyticsService {
         const saleIds = sales.map(s => s._id);
         const details = await this.saleDetailModel
           .find({ saleId: { $in: saleIds } })
-          .populate("beverageId", "name")
+          .populate("beverageId", "name containerType containerSize")
           .lean()
           .exec();
 
-        const monthByBeverage = new Map<string, { name: string; count: number; amount: number }>();
+        const monthByBeverage = new Map<
+          string,
+          {
+            name: string;
+            containerType?: string;
+            containerSize?: string;
+            count: number;
+            amount: number;
+          }
+        >();
         for (const d of details) {
-          const beverage = d.beverageId as { _id: unknown; name?: string } | null;
+          const beverage = d.beverageId as {
+            _id: unknown;
+            name?: string;
+            containerType?: string;
+            containerSize?: string;
+          } | null;
           if (!beverage?._id) continue;
           const rawId = beverage._id;
           const bid =
@@ -460,32 +539,59 @@ export class AnalyticsService {
           const name = beverage.name ?? "Sin nombre";
           const qty = Number(d.quantity);
           const amt = Number(d.subtotal);
-          if (!monthByBeverage.has(bid)) monthByBeverage.set(bid, { name, count: 0, amount: 0 });
+          if (!monthByBeverage.has(bid))
+            monthByBeverage.set(bid, {
+              name,
+              containerType: beverage.containerType,
+              containerSize: beverage.containerSize,
+              count: 0,
+              amount: 0,
+            });
           const e = monthByBeverage.get(bid)!;
           e.count += qty;
           e.amount += amt;
           totalCount += qty;
           totalAmount += amt;
         }
-        for (const [bid, { name, count, amount }] of monthByBeverage) {
-          pushPoint(bid, name, monthNames[month - 1], month, targetYear, count, amount);
+        for (const [
+          bid,
+          { name, containerType, containerSize, count, amount },
+        ] of monthByBeverage) {
+          pushPoint(
+            bid,
+            name,
+            containerType,
+            containerSize,
+            monthNames[month - 1],
+            month,
+            targetYear,
+            count,
+            amount,
+          );
         }
       }
     }
 
     const breakdown: BeverageBreakdownItem[] = Array.from(byBeverage.entries())
-      .map(([beverageId, { name, totalCount: c, totalAmount: a, series }]) => ({
-        beverageId,
-        name,
-        count: c,
-        amount: Number(a.toFixed(2)),
-        percentage: totalCount > 0 ? Number(((c / totalCount) * 100).toFixed(1)) : 0,
-        series: series.sort((x, y) => {
-          if (granularity === "month") return x.month - y.month;
-          if (granularity === "week") return x.month - y.month;
-          return 0;
+      .map(
+        ([
+          beverageId,
+          { name, containerType, containerSize, totalCount: c, totalAmount: a, series },
+        ]) => ({
+          beverageId,
+          name,
+          containerType,
+          containerSize,
+          count: c,
+          amount: Number(a.toFixed(2)),
+          percentage: totalCount > 0 ? Number(((c / totalCount) * 100).toFixed(1)) : 0,
+          series: series.sort((x, y) => {
+            if (granularity === "month") return x.month - y.month;
+            if (granularity === "week") return x.month - y.month;
+            return 0;
+          }),
         }),
-      }))
+      )
       .sort((a, b) => b.count - a.count);
 
     return {

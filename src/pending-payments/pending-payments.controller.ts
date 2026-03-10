@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Param, Delete, Patch, Query } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Delete,
+  Patch,
+  Query,
+  StreamableFile,
+} from "@nestjs/common";
 import { PendingPaymentsService } from "./pending-payments.service";
 import { CreatePendingPaymentDto } from "./dto/create-pending-payment.dto";
 import { UpdatePendingPaymentDto } from "./dto/update-pending-payment.dto";
@@ -50,6 +60,21 @@ export class PendingPaymentsController {
       debtDateFrom,
       debtDateTo,
     );
+  }
+
+  @Get(":id/pdf")
+  @ApiBearerAuth()
+  @Auth(UserRole.ADMIN, UserRole.SELLER)
+  @ApiOperation({ summary: "Generar PDF comanda del pago pendiente (reimprimible)" })
+  @ApiResponse({ status: 200, description: "PDF generado" })
+  @ApiResponse({ status: 404, description: "No encontrado" })
+  async getPdf(@Param("id") id: string): Promise<StreamableFile> {
+    const buffer = await this.pendingPaymentsService.generateComandaPdf(id);
+    const filename = `comanda-pago-pendiente-${id}.pdf`;
+    return new StreamableFile(buffer, {
+      type: "application/pdf",
+      disposition: `inline; filename="${filename}"`,
+    });
   }
 
   @Get(":id")

@@ -43,4 +43,20 @@ export class CreateBeverageDto {
   @IsOptional()
   @IsString()
   imageUrl?: string;
+
+  @ApiPropertyOptional({ example: 0, description: "Cantidad en inventario (unidades)" })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  stock?: number;
+
+  @ApiPropertyOptional({
+    example: 1800,
+    description:
+      "Precio de coste unitario en COP (para margen de ganancia). Ej: canasta 68.000/38 ≈ 1.800",
+  })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  costPrice?: number;
 }

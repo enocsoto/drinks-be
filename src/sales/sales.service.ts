@@ -52,6 +52,9 @@ export class SalesService {
       const beverage = await this.beverageService.findOne(beverageId);
       unitPrice = Number(beverage.price);
       detailPayload.beverageId = new Types.ObjectId(beverageId);
+
+      // Regla de negocio: no vender si no hay stock suficiente (decremento atómico)
+      await this.beverageService.decrementStock(beverageId, quantity);
     } else {
       if (inputUnitPrice == null || inputUnitPrice < 0) {
         throw new BadRequestException(
@@ -64,19 +67,36 @@ export class SalesService {
     const subtotal = Number((unitPrice * quantity).toFixed(2));
 
     const saleDate = todayColombia();
-    const sale = await this.saleModel.create({
-      userDocument: sellerId,
-      tableNumber,
-      totalPrice: subtotal,
-      saleDate,
-      DateSale: new Date(),
-    });
+    let sale: SaleDocument;
+    try {
+      sale = await this.saleModel.create({
+        userDocument: sellerId,
+        tableNumber,
+        totalPrice: subtotal,
+        saleDate,
+        DateSale: new Date(),
+      });
+    } catch (err) {
+      if (lineType === SaleDetailType.BEVERAGE && beverageId) {
+        await this.beverageService.incrementStock(beverageId, quantity);
+      }
+      throw err;
+    }
 
     detailPayload.saleId = sale._id;
     detailPayload.unitPrice = unitPrice;
     detailPayload.subtotal = subtotal;
 
-    const detail = await this.saleDetailModel.create(detailPayload);
+    let detail: SaleDetailDocument;
+    try {
+      detail = await this.saleDetailModel.create(detailPayload);
+    } catch (err) {
+      if (lineType === SaleDetailType.BEVERAGE && beverageId) {
+        await this.beverageService.incrementStock(beverageId, quantity);
+      }
+      await this.saleModel.deleteOne({ _id: sale._id }).exec();
+      throw err;
+    }
 
     return {
       sale: sale.toJSON(),
@@ -263,6 +283,27 @@ export class SalesService {
     }
 
     const subtotal = Number((unitPrice * quantity).toFixed(2));
+
+    // Ajuste de stock al modificar venta de bebida
+    if (detail.type === SaleDetailType.BEVERAGE) {
+      const oldQuantity = detail.quantity;
+      const oldBeverageId = detail.beverageId?.toString();
+      const newBeverageId = beverageId?.toString();
+
+      if (oldBeverageId && newBeverageId) {
+        if (oldBeverageId === newBeverageId) {
+          const deltaQty = quantity - oldQuantity;
+          if (deltaQty > 0) {
+            await this.beverageService.decrementStock(newBeverageId, deltaQty);
+          } else if (deltaQty < 0) {
+            await this.beverageService.incrementStock(oldBeverageId, -deltaQty);
+          }
+        } else {
+          await this.beverageService.incrementStock(oldBeverageId, oldQuantity);
+          await this.beverageService.decrementStock(newBeverageId, quantity);
+        }
+      }
+    }
 
     const newTotal = details.reduce((acc: number, d) => {
       if (d._id.toString() === detail._id.toString()) return acc + subtotal;

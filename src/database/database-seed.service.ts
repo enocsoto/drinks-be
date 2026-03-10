@@ -58,11 +58,19 @@ export class DatabaseSeedService {
     for (const item of BEVERAGE_SEED_DATA) {
       const imageUrl = getBeverageImageUrl(item.name, item.containerType);
       await this.beverageModel.create({
-        ...item,
+        name: item.name,
+        price: item.price,
+        type: item.type,
+        containerType: item.containerType,
+        containerSize: item.containerSize,
+        stock: item.stock ?? 0,
+        costPrice: item.costPrice ?? 0,
         imageUrl,
         isActive: true,
       });
-      this.logger.log(`Bebida creada: ${item.name} - ${item.containerSize} ($${item.price} COP).`);
+      this.logger.log(
+        `Bebida creada: ${item.name} - ${item.containerSize} ($${item.price} COP, stock ${item.stock ?? 0}).`,
+      );
     }
   }
 

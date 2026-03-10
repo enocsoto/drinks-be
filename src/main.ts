@@ -1,6 +1,7 @@
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify";
+import multipart from "@fastify/multipart";
 import { ValidationPipe, Logger } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 
@@ -21,6 +22,7 @@ async function bootstrap() {
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
   });
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, fastify);
+  await app.register(multipart, { limits: { fileSize: 5 * 1024 * 1024 } }); // 5 MB
 
   const logger = new Logger("Bootstrap");
   const PORT = process.env.APP_PORT ?? 3001;
