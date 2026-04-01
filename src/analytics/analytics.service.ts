@@ -3,126 +3,67 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { Sale, SaleDocument } from "../sales/schemas/sale.schema";
 import { SaleDetail, SaleDetailDocument } from "../sales/schemas/sale-detail.schema";
-import { Beverage, BeverageDocument } from "../beverage/schemas/beverage.schema";
 import { User, UserDocument } from "../user/schemas/user.schema";
-import { DrinkType } from "../beverage/enum/drink-type.enum";
 import { getMonthsInYear, getWeeksInYearUpToToday } from "../common/utils/date.util";
 import {
   todayColombia,
   getDayRangeColombia,
   getLastDaysColombia,
 } from "../common/utils/date-colombia.util";
+import { AnalyticsSaleDetailLoader } from "./analytics-sale-detail.loader";
+import { MONTH_LABELS_ES } from "./analytics.constants";
+import type {
+  TodaySalesDto,
+  SalesByPeriodDto,
+  TopSellerDto,
+  TransactionsDto,
+  SalesByBeverageDto,
+} from "./analytics.types";
+import {
+  accumulateDrinkTypeFromDetails,
+  breakdownMapToArrayWithPercentages,
+  type DrinkTypeBreakdownMap,
+} from "./utils/analytics-drink-type.util";
+import {
+  aggregateDetailsByBeverageInPeriod,
+  finalizeSalesByBeverageDto,
+  pushBeverageSeriesPoint,
+  type BeverageEntry,
+} from "./utils/analytics-beverage.util";
+import { aggregateTopSellers } from "./utils/analytics-top-sellers.util";
+import type { SaleLean, DetailLean } from "./utils/analytics-top-sellers.util";
 
-export interface TodaySalesDto {
-  totalSales: number;
-  totalAmount: number;
-  breakdown: Array<{
-    type: DrinkType;
-    label: string;
-    count: number;
-    amount: number;
-    percentage: number;
-  }>;
-}
-
-export interface SalesByPeriodDto {
-  totalTicketSales: number;
-  totalAmount: number;
-  series: Array<{ month: number; year: number; label: string; count: number; amount: number }>;
-  breakdown: Array<{
-    type: DrinkType;
-    label: string;
-    count: number;
-    amount: number;
-    percentage: number;
-  }>;
-}
-
-export interface TopSellerDto {
-  sellerId: number;
-  name: string;
-  totalSales: number;
-  totalAmount: number;
-  percentage: number;
-}
-
-export interface TransactionsDto {
-  completed: { count: number; percentage: number };
-  pending: { count: number; percentage: number };
-  total: number;
-}
-
-export interface BeverageBreakdownItem {
-  beverageId: string;
-  name: string;
-  containerType?: string;
-  containerSize?: string;
-  count: number;
-  amount: number;
-  percentage: number;
-  series: Array<{ month: number; year: number; label: string; count: number; amount: number }>;
-}
-
-export interface SalesByBeverageDto {
-  totalTicketSales: number;
-  totalAmount: number;
-  breakdown: BeverageBreakdownItem[];
-}
+export type {
+  TodaySalesDto,
+  SalesByPeriodDto,
+  TopSellerDto,
+  TransactionsDto,
+  BeverageBreakdownItem,
+  SalesByBeverageDto,
+} from "./analytics.types";
 
 @Injectable()
 export class AnalyticsService {
   constructor(
     @InjectModel(Sale.name) private readonly saleModel: Model<SaleDocument>,
     @InjectModel(SaleDetail.name) private readonly saleDetailModel: Model<SaleDetailDocument>,
-    @InjectModel(Beverage.name) private readonly beverageModel: Model<BeverageDocument>,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    private readonly saleDetailLoader: AnalyticsSaleDetailLoader,
   ) {}
 
   async getTodaySales(): Promise<TodaySalesDto> {
     const dateStr = todayColombia();
     const { start, end } = getDayRangeColombia(dateStr);
 
-    const sales = await this.saleModel
-      .find({ DateSale: { $gte: start, $lt: end } })
-      .lean()
-      .exec();
+    const { details } = await this.saleDetailLoader.loadDetailsForDateRange(start, end, "type");
+    const breakdownMap: DrinkTypeBreakdownMap = new Map();
+    const { periodCount, periodAmount } = accumulateDrinkTypeFromDetails(details, breakdownMap);
 
-    const saleIds = sales.map(s => s._id);
-    const details = await this.saleDetailModel
-      .find({ saleId: { $in: saleIds } })
-      .populate("beverageId", "type")
-      .lean()
-      .exec();
-
-    const breakdownMap = new Map<DrinkType, { count: number; amount: number }>();
-    let totalCount = 0;
-    let totalAmount = 0;
-
-    for (const d of details) {
-      const beverage = d.beverageId as { type?: DrinkType } | null;
-      const type = beverage?.type ?? DrinkType.OTHER;
-      const qty = Number(d.quantity);
-      const amt = Number(d.subtotal);
-
-      if (!breakdownMap.has(type)) breakdownMap.set(type, { count: 0, amount: 0 });
-      const entry = breakdownMap.get(type)!;
-      entry.count += qty;
-      entry.amount += amt;
-      totalCount += qty;
-      totalAmount += amt;
-    }
-
-    const breakdown = Array.from(breakdownMap.entries()).map(([type, { count, amount }]) => ({
-      type,
-      label: type,
-      count,
-      amount,
-      percentage: totalCount > 0 ? Number(((count / totalCount) * 100).toFixed(1)) : 0,
-    }));
+    const breakdown = breakdownMapToArrayWithPercentages(breakdownMap, periodCount);
 
     return {
-      totalSales: totalCount,
-      totalAmount: Number(totalAmount.toFixed(2)),
+      totalSales: periodCount,
+      totalAmount: Number(periodAmount.toFixed(2)),
       breakdown,
     };
   }
@@ -142,167 +83,65 @@ export class AnalyticsService {
       count: number;
       amount: number;
     }> = [];
-    const breakdownMap = new Map<DrinkType, { count: number; amount: number }>();
+    const breakdownMap: DrinkTypeBreakdownMap = new Map();
     let totalCount = 0;
     let totalAmount = 0;
 
     if (granularity === "day") {
-      const DAYS = 31;
-      const days = getLastDaysColombia(DAYS);
+      const days = getLastDaysColombia(31);
       for (const { label, start, end } of days) {
-        const sales = await this.saleModel
-          .find({ DateSale: { $gte: start, $lt: end } })
-          .lean()
-          .exec();
-
-        const saleIds = sales.map(s => s._id);
-        const details = await this.saleDetailModel
-          .find({ saleId: { $in: saleIds } })
-          .populate("beverageId", "type")
-          .lean()
-          .exec();
-
-        let dayCount = 0;
-        let dayAmount = 0;
-
-        for (const d of details) {
-          const beverage = d.beverageId as { type?: DrinkType } | null;
-          const type = beverage?.type ?? DrinkType.OTHER;
-          const qty = Number(d.quantity);
-          const amt = Number(d.subtotal);
-
-          if (!breakdownMap.has(type)) breakdownMap.set(type, { count: 0, amount: 0 });
-          const entry = breakdownMap.get(type)!;
-          entry.count += qty;
-          entry.amount += amt;
-          dayCount += qty;
-          dayAmount += amt;
-          totalCount += qty;
-          totalAmount += amt;
-        }
-
+        const { details } = await this.saleDetailLoader.loadDetailsForDateRange(start, end, "type");
+        const { periodCount, periodAmount } = accumulateDrinkTypeFromDetails(details, breakdownMap);
+        totalCount += periodCount;
+        totalAmount += periodAmount;
         series.push({
           month: 0,
           year: targetYear,
           label,
-          count: dayCount,
-          amount: Number(dayAmount.toFixed(2)),
+          count: periodCount,
+          amount: Number(periodAmount.toFixed(2)),
         });
       }
     } else if (granularity === "week") {
       const weeks = getWeeksInYearUpToToday(targetYear);
       for (const { weekIndex, start, end, label } of weeks) {
-        const sales = await this.saleModel
-          .find({ DateSale: { $gte: start, $lt: end } })
-          .lean()
-          .exec();
-
-        const saleIds = sales.map(s => s._id);
-        const details = await this.saleDetailModel
-          .find({ saleId: { $in: saleIds } })
-          .populate("beverageId", "type")
-          .lean()
-          .exec();
-
-        let weekCount = 0;
-        let weekAmount = 0;
-
-        for (const d of details) {
-          const beverage = d.beverageId as { type?: DrinkType } | null;
-          const type = beverage?.type ?? DrinkType.OTHER;
-          const qty = Number(d.quantity);
-          const amt = Number(d.subtotal);
-
-          if (!breakdownMap.has(type)) breakdownMap.set(type, { count: 0, amount: 0 });
-          const entry = breakdownMap.get(type)!;
-          entry.count += qty;
-          entry.amount += amt;
-          weekCount += qty;
-          weekAmount += amt;
-          totalCount += qty;
-          totalAmount += amt;
-        }
-
+        const { details } = await this.saleDetailLoader.loadDetailsForDateRange(start, end, "type");
+        const { periodCount, periodAmount } = accumulateDrinkTypeFromDetails(details, breakdownMap);
+        totalCount += periodCount;
+        totalAmount += periodAmount;
         series.push({
           month: weekIndex,
           year: targetYear,
           label,
-          count: weekCount,
-          amount: Number(weekAmount.toFixed(2)),
+          count: periodCount,
+          amount: Number(periodAmount.toFixed(2)),
         });
       }
     } else {
-      const monthNames = [
-        "Ene",
-        "Feb",
-        "Mar",
-        "Abr",
-        "May",
-        "Jun",
-        "Jul",
-        "Ago",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dic",
-      ];
       const allMonths = getMonthsInYear(targetYear);
       const months = isCurrentYear
         ? allMonths.filter(m => m.month <= now.getMonth() + 1)
         : allMonths;
 
       for (const { month, start, end } of months) {
-        const sales = await this.saleModel
-          .find({ DateSale: { $gte: start, $lt: end } })
-          .lean()
-          .exec();
-
-        const saleIds = sales.map(s => s._id);
-        const details = await this.saleDetailModel
-          .find({ saleId: { $in: saleIds } })
-          .populate("beverageId", "type")
-          .lean()
-          .exec();
-
-        let monthCount = 0;
-        let monthAmount = 0;
-
-        for (const d of details) {
-          const beverage = d.beverageId as { type?: DrinkType } | null;
-          const type = beverage?.type ?? DrinkType.OTHER;
-          const qty = Number(d.quantity);
-          const amt = Number(d.subtotal);
-
-          if (!breakdownMap.has(type)) breakdownMap.set(type, { count: 0, amount: 0 });
-          const entry = breakdownMap.get(type)!;
-          entry.count += qty;
-          entry.amount += amt;
-          monthCount += qty;
-          monthAmount += amt;
-          totalCount += qty;
-          totalAmount += amt;
-        }
-
+        const { details } = await this.saleDetailLoader.loadDetailsForDateRange(start, end, "type");
+        const { periodCount, periodAmount } = accumulateDrinkTypeFromDetails(details, breakdownMap);
+        totalCount += periodCount;
+        totalAmount += periodAmount;
         series.push({
           month,
           year: targetYear,
-          label: monthNames[month - 1],
-          count: monthCount,
-          amount: Number(monthAmount.toFixed(2)),
+          label: MONTH_LABELS_ES[month - 1],
+          count: periodCount,
+          amount: Number(periodAmount.toFixed(2)),
         });
       }
     }
 
-    const breakdown = Array.from(breakdownMap.entries()).map(([type, { count, amount }]) => ({
-      type,
-      label: type,
-      count,
-      amount,
-      percentage: totalCount > 0 ? Number(((count / totalCount) * 100).toFixed(1)) : 0,
-    }));
+    const breakdown = breakdownMapToArrayWithPercentages(breakdownMap, totalCount);
 
     return {
-      totalTicketSales: totalCount | 0,
+      totalTicketSales: totalCount,
       totalAmount: Number(totalAmount.toFixed(2)),
       series,
       breakdown,
@@ -316,186 +155,54 @@ export class AnalyticsService {
     const targetYear = year ?? new Date().getFullYear();
     const now = new Date();
     const isCurrentYear = targetYear === now.getFullYear();
-    const monthNames = [
-      "Ene",
-      "Feb",
-      "Mar",
-      "Abr",
-      "May",
-      "Jun",
-      "Jul",
-      "Ago",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dic",
-    ];
 
-    type BeverageEntry = {
-      name: string;
-      containerType?: string;
-      containerSize?: string;
-      totalCount: number;
-      totalAmount: number;
-      series: Array<{ month: number; year: number; label: string; count: number; amount: number }>;
-    };
     const byBeverage = new Map<string, BeverageEntry>();
-    let totalCount = 0;
-    let totalAmount = 0;
-
-    const pushPoint = (
-      beverageId: string,
-      name: string,
-      containerType: string | undefined,
-      containerSize: string | undefined,
-      label: string,
-      month: number,
-      pointYear: number,
-      count: number,
-      amount: number,
-    ) => {
-      if (!byBeverage.has(beverageId)) {
-        byBeverage.set(beverageId, {
-          name,
-          containerType,
-          containerSize,
-          totalCount: 0,
-          totalAmount: 0,
-          series: [],
-        });
-      }
-      const entry = byBeverage.get(beverageId)!;
-      entry.totalCount += count;
-      entry.totalAmount += amount;
-      entry.series.push({
-        month,
-        year: pointYear,
-        label,
-        count,
-        amount: Number(amount.toFixed(2)),
-      });
-    };
+    const totals = { totalCount: 0, totalAmount: 0 };
 
     if (granularity === "day") {
       const days = getLastDaysColombia(31);
       for (const { label, start, end } of days) {
-        const sales = await this.saleModel
-          .find({ DateSale: { $gte: start, $lt: end } })
-          .lean()
-          .exec();
-        const saleIds = sales.map(s => s._id);
-        const details = await this.saleDetailModel
-          .find({ saleId: { $in: saleIds } })
-          .populate("beverageId", "name containerType containerSize")
-          .lean()
-          .exec();
-
-        const dayByBeverage = new Map<
-          string,
-          {
-            name: string;
-            containerType?: string;
-            containerSize?: string;
-            count: number;
-            amount: number;
-          }
-        >();
-        for (const d of details) {
-          const beverage = d.beverageId as {
-            _id: unknown;
-            name?: string;
-            containerType?: string;
-            containerSize?: string;
-          } | null;
-          if (!beverage?._id) continue;
-          const rawId = beverage._id;
-          const bid =
-            typeof rawId === "string" ? rawId : (rawId as { toString(): string }).toString();
-          const name = beverage.name ?? "Sin nombre";
-          const qty = Number(d.quantity);
-          const amt = Number(d.subtotal);
-          if (!dayByBeverage.has(bid))
-            dayByBeverage.set(bid, {
-              name,
-              containerType: beverage.containerType,
-              containerSize: beverage.containerSize,
-              count: 0,
-              amount: 0,
-            });
-          const e = dayByBeverage.get(bid)!;
-          e.count += qty;
-          e.amount += amt;
-          totalCount += qty;
-          totalAmount += amt;
-        }
-        for (const [bid, { name, containerType, containerSize, count, amount }] of dayByBeverage) {
-          pushPoint(bid, name, containerType, containerSize, label, 0, targetYear, count, amount);
+        const { details } = await this.saleDetailLoader.loadDetailsForDateRange(
+          start,
+          end,
+          "name containerType containerSize",
+        );
+        const periodMap = aggregateDetailsByBeverageInPeriod(details, totals);
+        for (const [bid, { name, containerType, containerSize, count, amount }] of periodMap) {
+          pushBeverageSeriesPoint(byBeverage, {
+            beverageId: bid,
+            name,
+            containerType,
+            containerSize,
+            label,
+            monthIndex: 0,
+            year: targetYear,
+            count,
+            amount,
+          });
         }
       }
     } else if (granularity === "week") {
       const weeks = getWeeksInYearUpToToday(targetYear);
       for (const { weekIndex, start, end, label } of weeks) {
-        const sales = await this.saleModel
-          .find({ DateSale: { $gte: start, $lt: end } })
-          .lean()
-          .exec();
-        const saleIds = sales.map(s => s._id);
-        const details = await this.saleDetailModel
-          .find({ saleId: { $in: saleIds } })
-          .populate("beverageId", "name containerType containerSize")
-          .lean()
-          .exec();
-
-        const weekByBeverage = new Map<
-          string,
-          {
-            name: string;
-            containerType?: string;
-            containerSize?: string;
-            count: number;
-            amount: number;
-          }
-        >();
-        for (const d of details) {
-          const beverage = d.beverageId as {
-            _id: unknown;
-            name?: string;
-            containerType?: string;
-            containerSize?: string;
-          } | null;
-          if (!beverage?._id) continue;
-          const rawId = beverage._id;
-          const bid =
-            typeof rawId === "string" ? rawId : (rawId as { toString(): string }).toString();
-          const name = beverage.name ?? "Sin nombre";
-          const qty = Number(d.quantity);
-          const amt = Number(d.subtotal);
-          if (!weekByBeverage.has(bid))
-            weekByBeverage.set(bid, {
-              name,
-              containerType: beverage.containerType,
-              containerSize: beverage.containerSize,
-              count: 0,
-              amount: 0,
-            });
-          const e = weekByBeverage.get(bid)!;
-          e.count += qty;
-          e.amount += amt;
-          totalCount += qty;
-          totalAmount += amt;
-        }
-        for (const [bid, { name, containerType, containerSize, count, amount }] of weekByBeverage) {
-          pushPoint(
-            bid,
+        const { details } = await this.saleDetailLoader.loadDetailsForDateRange(
+          start,
+          end,
+          "name containerType containerSize",
+        );
+        const periodMap = aggregateDetailsByBeverageInPeriod(details, totals);
+        for (const [bid, { name, containerType, containerSize, count, amount }] of periodMap) {
+          pushBeverageSeriesPoint(byBeverage, {
+            beverageId: bid,
             name,
             containerType,
             containerSize,
             label,
-            weekIndex,
-            targetYear,
+            monthIndex: weekIndex,
+            year: targetYear,
             count,
             amount,
-          );
+          });
         }
       }
     } else {
@@ -503,102 +210,36 @@ export class AnalyticsService {
       const months = isCurrentYear
         ? allMonths.filter(m => m.month <= now.getMonth() + 1)
         : allMonths;
-      for (const { month, start, end } of months) {
-        const sales = await this.saleModel
-          .find({ DateSale: { $gte: start, $lt: end } })
-          .lean()
-          .exec();
-        const saleIds = sales.map(s => s._id);
-        const details = await this.saleDetailModel
-          .find({ saleId: { $in: saleIds } })
-          .populate("beverageId", "name containerType containerSize")
-          .lean()
-          .exec();
 
-        const monthByBeverage = new Map<
-          string,
-          {
-            name: string;
-            containerType?: string;
-            containerSize?: string;
-            count: number;
-            amount: number;
-          }
-        >();
-        for (const d of details) {
-          const beverage = d.beverageId as {
-            _id: unknown;
-            name?: string;
-            containerType?: string;
-            containerSize?: string;
-          } | null;
-          if (!beverage?._id) continue;
-          const rawId = beverage._id;
-          const bid =
-            typeof rawId === "string" ? rawId : (rawId as { toString(): string }).toString();
-          const name = beverage.name ?? "Sin nombre";
-          const qty = Number(d.quantity);
-          const amt = Number(d.subtotal);
-          if (!monthByBeverage.has(bid))
-            monthByBeverage.set(bid, {
-              name,
-              containerType: beverage.containerType,
-              containerSize: beverage.containerSize,
-              count: 0,
-              amount: 0,
-            });
-          const e = monthByBeverage.get(bid)!;
-          e.count += qty;
-          e.amount += amt;
-          totalCount += qty;
-          totalAmount += amt;
-        }
-        for (const [
-          bid,
-          { name, containerType, containerSize, count, amount },
-        ] of monthByBeverage) {
-          pushPoint(
-            bid,
+      for (const { month, start, end } of months) {
+        const { details } = await this.saleDetailLoader.loadDetailsForDateRange(
+          start,
+          end,
+          "name containerType containerSize",
+        );
+        const periodMap = aggregateDetailsByBeverageInPeriod(details, totals);
+        for (const [bid, { name, containerType, containerSize, count, amount }] of periodMap) {
+          pushBeverageSeriesPoint(byBeverage, {
+            beverageId: bid,
             name,
             containerType,
             containerSize,
-            monthNames[month - 1],
-            month,
-            targetYear,
+            label: MONTH_LABELS_ES[month - 1],
+            monthIndex: month,
+            year: targetYear,
             count,
             amount,
-          );
+          });
         }
       }
     }
 
-    const breakdown: BeverageBreakdownItem[] = Array.from(byBeverage.entries())
-      .map(
-        ([
-          beverageId,
-          { name, containerType, containerSize, totalCount: c, totalAmount: a, series },
-        ]) => ({
-          beverageId,
-          name,
-          containerType,
-          containerSize,
-          count: c,
-          amount: Number(a.toFixed(2)),
-          percentage: totalCount > 0 ? Number(((c / totalCount) * 100).toFixed(1)) : 0,
-          series: series.sort((x, y) => {
-            if (granularity === "month") return x.month - y.month;
-            if (granularity === "week") return x.month - y.month;
-            return 0;
-          }),
-        }),
-      )
-      .sort((a, b) => b.count - a.count);
-
-    return {
-      totalTicketSales: totalCount,
-      totalAmount: Number(totalAmount.toFixed(2)),
-      breakdown,
-    };
+    return finalizeSalesByBeverageDto(
+      byBeverage,
+      totals.totalCount,
+      totals.totalAmount,
+      granularity,
+    );
   }
 
   async getTopSellers(year?: number): Promise<TopSellerDto[]> {
@@ -626,33 +267,7 @@ export class AnalyticsService {
     const userByDoc = new Map<number, { name: string }>();
     for (const u of users) userByDoc.set(u.document, { name: u.name });
 
-    const bySeller = new Map<number, { name: string; count: number; amount: number }>();
-
-    for (const sale of sales) {
-      const doc = sale.userDocument;
-      const name = userByDoc.get(doc)?.name ?? `Vendedor ${doc}`;
-      const saleDetails = details.filter(d => d.saleId.toString() === sale._id.toString());
-      const count = saleDetails.reduce((acc, d) => acc + Number(d.quantity), 0);
-      const amount = saleDetails.reduce((acc, d) => acc + Number(d.subtotal), 0);
-
-      if (!bySeller.has(doc)) bySeller.set(doc, { name, count: 0, amount: 0 });
-      const entry = bySeller.get(doc)!;
-      entry.count += count;
-      entry.amount += amount;
-    }
-
-    const totalAmount = Array.from(bySeller.values()).reduce((acc, e) => acc + e.amount, 0);
-
-    return Array.from(bySeller.entries())
-      .map(([sellerId, { name, count, amount }]) => ({
-        sellerId,
-        name,
-        totalSales: count,
-        totalAmount: Number(amount.toFixed(2)),
-        percentage: totalAmount > 0 ? Number(((amount / totalAmount) * 100).toFixed(2)) : 0,
-      }))
-      .sort((a, b) => b.totalAmount - a.totalAmount)
-      .slice(0, 5);
+    return aggregateTopSellers(sales as SaleLean[], details as DetailLean[], userByDoc);
   }
 
   async getTransactions(): Promise<TransactionsDto> {

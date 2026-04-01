@@ -39,6 +39,7 @@ export class AuthService {
       sub: String(user.id ?? (user as { _id?: unknown })._id),
       document: Number(user.document),
       role: Array.isArray(user.role) ? user.role : [user.role],
+      name: user.name,
     };
 
     const token = await this.generateJwtSecret(payload);
@@ -62,6 +63,7 @@ export class AuthService {
       sub: user.id,
       document: user.document,
       role: user.role,
+      name: registerDto.name,
     };
     const token = await this.generateJwtSecret(payload);
 
@@ -82,6 +84,7 @@ export class AuthService {
       ),
       document: Number(user.document),
       role: Array.isArray(user.role) ? user.role : [user.role],
+      name: user.name,
     };
 
     const token = await this.generateJwtSecret(payload);

@@ -11,7 +11,8 @@ export class Sale {
   @Prop({ type: Number, required: true })
   userDocument: number;
 
-  @Prop({ type: Number, required: true, min: 1, max: 6, default: 1 })
+  /** 0 = venta directa / bar; 1–6 = mesa de billar */
+  @Prop({ type: Number, required: true, min: 0, max: 6, default: 1 })
   tableNumber: number;
 
   @Prop({ required: true, type: Number, default: 0 })

@@ -4,10 +4,13 @@ import { Type } from "class-transformer";
 import { SaleDetailType } from "../enum/sale-detail-type.enum";
 
 export class CreateSaleDto {
-  @ApiProperty({ example: 1, description: "Número de mesa (1 a 6)" })
+  @ApiProperty({
+    example: 1,
+    description: "Mesa de billar (1–6) o 0 para venta directa / bar (sin mesa)",
+  })
   @IsNumber()
-  @Min(1, { message: "La mesa debe ser entre 1 y 6." })
-  @Max(6, { message: "La mesa debe ser entre 1 y 6." })
+  @Min(0, { message: "La mesa debe ser 0 (bar) o entre 1 y 6." })
+  @Max(6, { message: "La mesa debe ser 0 (bar) o entre 1 y 6." })
   @Type(() => Number)
   tableNumber: number;
 

@@ -11,6 +11,21 @@ import { CreateSaleResponseDto } from "./dto/response/create-sale.response.dto";
 import { User, UserDocument } from "../user/schemas/user.schema";
 import { todayColombia, getDayRangeColombia } from "../common/utils/date-colombia.util";
 import { SaleDetailType } from "./enum/sale-detail-type.enum";
+import { buildUserMapByDocument, groupSaleDetailsBySaleId } from "./utils/sales-list.util";
+
+type SaleLean = {
+  _id: { toString(): string };
+  userDocument: number;
+  tableNumber?: number;
+  [key: string]: unknown;
+};
+
+type SaleWithDetailsRow = SaleLean & {
+  id: string;
+  tableNumber: number;
+  user: { document: number; name: string } | null;
+  details: Record<string, unknown>[];
+};
 
 @Injectable()
 export class SalesService {
@@ -114,45 +129,13 @@ export class SalesService {
       ],
     };
 
-    const sales = await this.saleModel.find(where).sort({ DateSale: -1 }).lean().exec();
-
-    const saleIds = sales.map(s => s._id);
-    const details = await this.saleDetailModel
-      .find({ saleId: { $in: saleIds } })
-      .populate("beverageId", "name type price")
+    const sales = (await this.saleModel
+      .find(where)
+      .sort({ DateSale: -1 })
       .lean()
-      .exec();
+      .exec()) as SaleLean[];
 
-    const docNumbers = [...new Set(sales.map(s => s.userDocument))];
-    const users = await this.userModel
-      .find({ document: { $in: docNumbers } })
-      .select("name document")
-      .lean()
-      .exec();
-    const userByDoc = new Map<number, { document: number; name: string }>();
-    for (const u of users) {
-      userByDoc.set(u.document, { document: u.document, name: u.name });
-    }
-
-    const detailsBySale = new Map<string, typeof details>();
-    for (const d of details) {
-      const sid = d.saleId.toString();
-      if (!detailsBySale.has(sid)) detailsBySale.set(sid, []);
-      detailsBySale.get(sid)!.push(d);
-    }
-
-    const salesWithDetails = sales.map(s => {
-      const user = userByDoc.get(s.userDocument) ?? null;
-      const detailsList = detailsBySale.get(s._id.toString()) ?? [];
-      return {
-        ...s,
-        id: s._id.toString(),
-        tableNumber: s.tableNumber ?? 1,
-        user,
-        details: detailsList.map(d => this.mapDetailToResponse(d)),
-      };
-    });
-
+    const salesWithDetails = await this.enrichSalesWithDetails(sales);
     const summaryBySeller = this.summaryBySeller(salesWithDetails);
 
     return { sales: salesWithDetails, summary: Object.values(summaryBySeller) };
@@ -162,7 +145,7 @@ export class SalesService {
     try {
       if (date && sellerId) {
         const { start, end } = getDayRangeColombia(date);
-        const sales = await this.saleModel
+        const sales = (await this.saleModel
           .find({
             userDocument: sellerId,
             $or: [
@@ -171,42 +154,9 @@ export class SalesService {
             ],
           })
           .lean()
-          .exec();
+          .exec()) as SaleLean[];
 
-        const saleIds = sales.map(s => s._id);
-        const details = await this.saleDetailModel
-          .find({ saleId: { $in: saleIds } })
-          .populate("beverageId", "name type price")
-          .lean()
-          .exec();
-
-        const users = await this.userModel
-          .find({ document: { $in: [...new Set(sales.map(s => s.userDocument))] } })
-          .select("name document")
-          .lean()
-          .exec();
-        const userByDoc = new Map<number, { document: number; name: string }>();
-        for (const u of users) userByDoc.set(u.document, { document: u.document, name: u.name });
-
-        const detailsBySale = new Map<string, typeof details>();
-        for (const d of details) {
-          const sid = d.saleId.toString();
-          if (!detailsBySale.has(sid)) detailsBySale.set(sid, []);
-          detailsBySale.get(sid)!.push(d);
-        }
-
-        const salesWithDetails = sales.map(s => {
-          const user = userByDoc.get(s.userDocument) ?? null;
-          const detailsList = detailsBySale.get(s._id.toString()) ?? [];
-          return {
-            ...s,
-            id: s._id.toString(),
-            tableNumber: s.tableNumber ?? 1,
-            user,
-            details: detailsList.map(d => this.mapDetailToResponse(d)),
-          };
-        });
-
+        const salesWithDetails = await this.enrichSalesWithDetails(sales);
         const summaryBySeller = this.summaryBySeller(salesWithDetails);
         return { sales: salesWithDetails, summary: Object.values(summaryBySeller) };
       }
@@ -329,6 +279,40 @@ export class SalesService {
 
     const updated = await this.findSaleById(id);
     return updated as SaleDocument & { details: SaleDetailDocument[] };
+  }
+
+  private async enrichSalesWithDetails(sales: SaleLean[]): Promise<SaleWithDetailsRow[]> {
+    if (sales.length === 0) return [];
+
+    const saleIds = sales.map(s => s._id);
+    const details = await this.saleDetailModel
+      .find({ saleId: { $in: saleIds } })
+      .populate("beverageId", "name type price")
+      .lean()
+      .exec();
+
+    const docNumbers = [...new Set(sales.map(s => s.userDocument))];
+    const users = await this.userModel
+      .find({ document: { $in: docNumbers } })
+      .select("name document")
+      .lean()
+      .exec();
+    const userByDoc = buildUserMapByDocument(users);
+
+    const detailsBySale = groupSaleDetailsBySaleId(details);
+
+    return sales.map(s => {
+      const user = userByDoc.get(s.userDocument) ?? null;
+      const detailsList = detailsBySale.get(s._id.toString()) ?? [];
+      const row: SaleWithDetailsRow = {
+        ...s,
+        id: s._id.toString(),
+        tableNumber: s.tableNumber ?? 1,
+        user,
+        details: detailsList.map(d => this.mapDetailToResponse(d)),
+      };
+      return row;
+    });
   }
 
   private mapDetailToResponse(d: {
