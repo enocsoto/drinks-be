@@ -12,7 +12,7 @@ export class AnalyticsController {
   @Get("today")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Ventas del día con desglose por tipo de bebida" })
-  @Auth(UserRole.SELLER, UserRole.ADMIN)
+  @Auth(UserRole.ADMIN)
   getTodaySales() {
     return this.analyticsService.getTodaySales();
   }
@@ -25,7 +25,7 @@ export class AnalyticsController {
   })
   @ApiQuery({ name: "year", required: false, type: Number })
   @ApiQuery({ name: "granularity", required: false, enum: ["month", "week", "day"] })
-  @Auth(UserRole.SELLER, UserRole.ADMIN)
+  @Auth(UserRole.ADMIN)
   getSalesByPeriod(
     @Query("year") year?: string,
     @Query("granularity") granularity?: "month" | "week" | "day",
@@ -43,7 +43,7 @@ export class AnalyticsController {
   })
   @ApiQuery({ name: "year", required: false, type: Number })
   @ApiQuery({ name: "granularity", required: false, enum: ["month", "week", "day"] })
-  @Auth(UserRole.SELLER, UserRole.ADMIN)
+  @Auth(UserRole.ADMIN)
   getSalesByBeverage(
     @Query("year") year?: string,
     @Query("granularity") granularity?: "month" | "week" | "day",
@@ -58,7 +58,7 @@ export class AnalyticsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Top vendedores por monto vendido" })
   @ApiQuery({ name: "year", required: false, type: Number })
-  @Auth(UserRole.SELLER, UserRole.ADMIN)
+  @Auth(UserRole.ADMIN)
   getTopSellers(@Query("year") year?: string) {
     return this.analyticsService.getTopSellers(year ? +year : undefined);
   }
@@ -66,7 +66,7 @@ export class AnalyticsController {
   @Get("transactions")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Resumen de transacciones del día" })
-  @Auth(UserRole.SELLER, UserRole.ADMIN)
+  @Auth(UserRole.ADMIN)
   getTransactions() {
     return this.analyticsService.getTransactions();
   }

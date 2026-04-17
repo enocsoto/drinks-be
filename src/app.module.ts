@@ -8,6 +8,7 @@ import { AuthModule } from "./auth/auth.module";
 import { AnalyticsModule } from "./analytics/analytics.module";
 import { ReportsModule } from "./reports/reports.module";
 import { PendingPaymentsModule } from "./pending-payments/pending-payments.module";
+import { SaleCorrectionRequestsModule } from "./sale-correction-requests/sale-correction-requests.module";
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { PendingPaymentsModule } from "./pending-payments/pending-payments.modul
     AnalyticsModule,
     ReportsModule,
     PendingPaymentsModule,
+    SaleCorrectionRequestsModule,
   ],
 })
 export class AppModule {}
