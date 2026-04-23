@@ -43,3 +43,12 @@ export function getLastDaysColombia(
   }
   return out;
 }
+
+/**
+ * Comprueba que `s` sea un día calendario válido en Colombia (YYYY-MM-DD).
+ */
+export function isValidYyyyMmDdString(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const parsed = dayjs.tz(`${s}T12:00:00`, ZONE_COLOMBIA);
+  return parsed.isValid() && parsed.format("YYYY-MM-DD") === s;
+}

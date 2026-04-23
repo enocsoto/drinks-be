@@ -38,6 +38,14 @@ export class SaleCorrectionRequestsController {
     return this.service.countPending().then(count => ({ count }));
   }
 
+  @Get("mine")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Mesero: listar mis solicitudes de corrección" })
+  @Auth(UserRole.SELLER)
+  findMine(@CurrentUser() user: UserDocument) {
+    return this.service.findMine(user);
+  }
+
   @Patch(":id")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Administrador: marcar solicitud como resuelta o rechazada" })

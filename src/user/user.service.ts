@@ -93,6 +93,23 @@ export class UserService {
     return user.toJSON() as Record<string, unknown>;
   }
 
+  /** Nombres por número de documento (batch para listados). */
+  async getNamesByDocuments(documents: number[]): Promise<Map<number, string>> {
+    const uniq = [...new Set(documents.filter(d => Number.isFinite(d)))];
+    if (uniq.length === 0) return new Map();
+    const users = await this.userModel
+      .find({ document: { $in: uniq } })
+      .select("document name")
+      .lean()
+      .exec();
+    const map = new Map<number, string>();
+    for (const u of users) {
+      const row = u as { document: number; name?: string };
+      map.set(Number(row.document), typeof row.name === "string" ? row.name : "");
+    }
+    return map;
+  }
+
   async update(id: string, updateUserDto: UpdateUserDto): Promise<Record<string, unknown>> {
     const user = await this.userModel.findById(id).select("+password").exec();
     if (!user) {

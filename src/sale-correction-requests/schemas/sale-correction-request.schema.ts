@@ -42,7 +42,16 @@ SaleCorrectionRequestSchema.set("toJSON", {
   virtuals: true,
   transform: (_doc: unknown, ret: unknown) => {
     const r = ret as Record<string, unknown>;
-    r.id = r._id?.toString();
+    r.id = r._id != null ? String((r._id as { toString(): string }).toString()) : r.id;
+    if (r.saleId != null) {
+      const rawSaleId = r.saleId;
+      if (rawSaleId instanceof Types.ObjectId) {
+        r.saleId = rawSaleId.toHexString();
+      } else if (typeof rawSaleId === "string") {
+        r.saleId = rawSaleId;
+      }
+      /* Si no es ObjectId ni string, Mongoose ya serializará en otro paso; no forzar String(object). */
+    }
     delete r._id;
     delete r.__v;
     return r;

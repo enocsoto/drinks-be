@@ -16,6 +16,8 @@ import { CreateSaleCorrectionRequestDto } from "./dto/create-sale-correction-req
 import { UserDocument } from "../user/schemas/user.schema";
 import { UserRole } from "../user/enum/user-roles.enum";
 import { AdminResolveCorrectionStatus } from "./dto/update-sale-correction-request.dto";
+import { SaleCorrectionRequestsGateway } from "./sale-correction-requests.gateway";
+import { UserService } from "../user/user.service";
 
 @Injectable()
 export class SaleCorrectionRequestsService {
@@ -23,6 +25,8 @@ export class SaleCorrectionRequestsService {
     @InjectModel(SaleCorrectionRequest.name)
     private readonly requestModel: Model<SaleCorrectionRequestDocument>,
     @InjectModel(Sale.name) private readonly saleModel: Model<SaleDocument>,
+    private readonly saleCorrectionRequestsGateway: SaleCorrectionRequestsGateway,
+    private readonly userService: UserService,
   ) {}
 
   async create(dto: CreateSaleCorrectionRequestDto, user: UserDocument) {
@@ -40,7 +44,7 @@ export class SaleCorrectionRequestsService {
     const sale = await this.saleModel.findById(dto.saleId).lean().exec();
     if (!sale) throw new NotFoundException("Venta no encontrada.");
 
-    if (sale.userDocument !== doc) {
+    if (Number(sale.userDocument) !== Number(doc)) {
       throw new ForbiddenException("Solo puedes solicitar corrección sobre tus propias ventas.");
     }
 
@@ -58,16 +62,40 @@ export class SaleCorrectionRequestsService {
 
     const created = await this.requestModel.create({
       saleId: new Types.ObjectId(dto.saleId),
-      requestedByDocument: doc,
+      requestedByDocument: Number(doc),
       reason: dto.reason?.trim() || undefined,
       status: SaleCorrectionRequestStatus.PENDING,
     });
-    return created.toJSON();
+    const json = created.toJSON();
+    this.saleCorrectionRequestsGateway.emitCorrectionRefresh();
+    return json;
   }
 
   async findAllForAdmin(status?: SaleCorrectionRequestStatus) {
     const filter = status ? { status } : {};
     const items = await this.requestModel.find(filter).sort({ createdAt: -1 }).limit(500).exec();
+    const rows = items.map(r => r.toJSON() as Record<string, unknown>);
+    const docs = rows.map(row => Number(row.requestedByDocument)).filter(d => Number.isFinite(d));
+    const nameByDoc = await this.userService.getNamesByDocuments(docs);
+    return rows.map(row => ({
+      ...row,
+      requestedByName: nameByDoc.get(Number(row.requestedByDocument)) ?? null,
+    }));
+  }
+
+  /** Solicitudes del mesero autenticado (para ocultar «Solicitar» en ventas ya pedidas). */
+  async findMine(user: UserDocument) {
+    const role = Array.isArray(user.role) ? user.role[0] : user.role;
+    if (role !== UserRole.SELLER) {
+      throw new ForbiddenException("Solo el mesero puede listar sus solicitudes.");
+    }
+    const doc = user.document != null ? Number(user.document) : Number.NaN;
+    if (!Number.isFinite(doc)) return [];
+    const items = await this.requestModel
+      .find({ requestedByDocument: doc })
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .exec();
     return items.map(r => r.toJSON());
   }
 
@@ -97,6 +125,8 @@ export class SaleCorrectionRequestsService {
     req.resolvedAt = new Date();
     req.resolvedByDocument = admin.document ?? undefined;
     await req.save();
-    return req.toJSON();
+    const updated = req.toJSON();
+    this.saleCorrectionRequestsGateway.emitCorrectionRefresh();
+    return updated;
   }
 }

@@ -18,10 +18,11 @@ API **NestJS** para un billar que vende bebidas (con y sin alcohol) en Colombia:
 
 ```bash
 npm install
-# o: yarn install
+cp .env.example .env
+# Editar .env: MongoDB, JWT_SECRET, CORS_ORIGINS, etc.
 ```
 
-Copia y ajusta variables de entorno según tu entorno (MongoDB, JWT, puerto, etc.).
+Detalle de variables: **`.env.example`**. El proyecto usa **npm** (`package-lock.json`); no mezclar con otro gestor.
 
 ## Comandos
 

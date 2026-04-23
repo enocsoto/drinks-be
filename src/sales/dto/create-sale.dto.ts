@@ -1,6 +1,15 @@
-import { IsNumber, IsOptional, IsMongoId, IsEnum, IsString, Min, Max } from "class-validator";
+import {
+  IsNumber,
+  IsOptional,
+  IsMongoId,
+  IsEnum,
+  IsString,
+  Min,
+  Max,
+  Matches,
+} from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { Type } from "class-transformer";
+import { Type, Transform } from "class-transformer";
 import { SaleDetailType } from "../enum/sale-detail-type.enum";
 
 export class CreateSaleDto {
@@ -68,4 +77,17 @@ export class CreateSaleDto {
   @IsNumber()
   @Type(() => Number)
   sellerId?: number;
+
+  @ApiPropertyOptional({
+    example: "2026-04-20",
+    description:
+      "Solo administrador: fecha de la venta en Colombia (YYYY-MM-DD). Si no se envía, se usa el día actual.",
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }): string | undefined =>
+    value === "" || value === null ? undefined : (value as string),
+  )
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "saleDate debe tener formato YYYY-MM-DD." })
+  saleDate?: string;
 }

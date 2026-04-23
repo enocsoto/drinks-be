@@ -7,7 +7,9 @@ import {
 import { Sale, SaleSchema } from "../sales/schemas/sale.schema";
 import { SaleCorrectionRequestsService } from "./sale-correction-requests.service";
 import { SaleCorrectionRequestsController } from "./sale-correction-requests.controller";
+import { SaleCorrectionRequestsGateway } from "./sale-correction-requests.gateway";
 import { AuthModule } from "../auth/auth.module";
+import { UserModule } from "../user/user.module";
 
 @Module({
   imports: [
@@ -16,9 +18,10 @@ import { AuthModule } from "../auth/auth.module";
       { name: Sale.name, schema: SaleSchema },
     ]),
     AuthModule,
+    UserModule,
   ],
   controllers: [SaleCorrectionRequestsController],
-  providers: [SaleCorrectionRequestsService],
+  providers: [SaleCorrectionRequestsService, SaleCorrectionRequestsGateway],
   exports: [SaleCorrectionRequestsService],
 })
 export class SaleCorrectionRequestsModule {}

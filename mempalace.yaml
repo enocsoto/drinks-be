@@ -1,0 +1,10 @@
+wing: drinks_be
+rooms:
+- name: src
+  description: Files from src/
+- name: backend
+  description: Files from database/
+- name: scripts
+  description: Files from scripts/
+- name: general
+  description: Files that don't fit other rooms

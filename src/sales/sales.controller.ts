@@ -25,8 +25,18 @@ export class SalesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "List sales (optional date filter)" })
   @Auth(UserRole.SELLER, UserRole.ADMIN)
-  findAll(@Query("date") date?: string) {
-    return this.salesService.findAll(date);
+  findAll(@Query("date") date: string | undefined, @CurrentUser() user: UserDocument) {
+    return this.salesService.findAll(date, user);
+  }
+
+  @Get("detail/:id")
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Obtener una venta por id MongoDB (bebida/cantidad; correcciones admin)",
+  })
+  @Auth(UserRole.ADMIN)
+  findSaleById(@Param("id") id: string) {
+    return this.salesService.findSaleById(id);
   }
 
   @Get(":sellerId")

@@ -10,8 +10,11 @@ import { BeverageService } from "../beverage/beverage.service";
 import { CreateSaleResponseDto } from "./dto/response/create-sale.response.dto";
 import { User, UserDocument } from "../user/schemas/user.schema";
 import { todayColombia, getDayRangeColombia } from "../common/utils/date-colombia.util";
+import { getPrimaryUserRole, isAdminUser } from "../common/utils/user-role.util";
 import { SaleDetailType } from "./enum/sale-detail-type.enum";
 import { buildUserMapByDocument, groupSaleDetailsBySaleId } from "./utils/sales-list.util";
+import { UserRole } from "../user/enum/user-roles.enum";
+import { resolveNewSaleYyyyMmDd } from "./utils/resolve-new-sale-yyyy-mm-dd.util";
 
 type SaleLean = {
   _id: { toString(): string };
@@ -39,6 +42,8 @@ export class SalesService {
 
   async create(createSaleDto: CreateSaleDto, user: UserDocument): Promise<CreateSaleResponseDto> {
     if (!createSaleDto.sellerId) createSaleDto.sellerId = user?.document;
+
+    const saleDate = resolveNewSaleYyyyMmDd(createSaleDto.saleDate, isAdminUser(user));
 
     const {
       tableNumber,
@@ -81,7 +86,6 @@ export class SalesService {
 
     const subtotal = Number((unitPrice * quantity).toFixed(2));
 
-    const saleDate = todayColombia();
     let sale: SaleDocument;
     try {
       sale = await this.saleModel.create({
@@ -119,7 +123,10 @@ export class SalesService {
     };
   }
 
-  async findAll(date?: string): Promise<{ sales: unknown[]; summary: unknown[] }> {
+  async findAll(
+    date?: string,
+    requester?: UserDocument,
+  ): Promise<{ sales: unknown[]; summary: unknown[] }> {
     if (!date) date = todayColombia();
     const { start, end } = getDayRangeColombia(date);
     const where: Record<string, unknown> = {
@@ -128,6 +135,14 @@ export class SalesService {
         { saleDate: { $exists: false }, DateSale: { $gte: start, $lt: end } },
       ],
     };
+
+    /** El mesero solo ve sus ventas; el admin ve el listado del día completo. */
+    if (requester) {
+      const role = getPrimaryUserRole(requester.role);
+      if (role === UserRole.SELLER && requester.document != null) {
+        where.userDocument = requester.document;
+      }
+    }
 
     const sales = (await this.saleModel
       .find(where)
@@ -192,12 +207,21 @@ export class SalesService {
 
   async findSaleById(id: string): Promise<SaleDocument & { details: SaleDetailDocument[] }> {
     const sale = await this.saleModel.findById(id).exec();
-    const details = await this.saleDetailModel.find({ saleId: id }).exec();
     if (!sale) throw new NotFoundException(`Venta con id ${id} no encontrada`);
 
-    const saleObj = sale.toObject() as unknown as Record<string, unknown>;
-    saleObj.details = details;
-    return saleObj as unknown as SaleDocument & { details: SaleDetailDocument[] };
+    // Usar sale._id (ObjectId) en la consulta: coincide con cómo se persiste saleId en SaleDetail.
+    const details = await this.saleDetailModel
+      .find({ saleId: sale._id })
+      .populate("beverageId", "name type price")
+      .exec();
+
+    const saleJson = sale.toJSON();
+    return {
+      ...saleJson,
+      details: details.map(d =>
+        this.mapDetailToResponse(d.toObject() as unknown as Record<string, unknown>),
+      ),
+    } as unknown as SaleDocument & { details: SaleDetailDocument[] };
   }
 
   async update(
@@ -208,7 +232,7 @@ export class SalesService {
     const sale = await this.saleModel.findById(id).exec();
     if (!sale) throw new NotFoundException(`Sale with id ${id} not found`);
 
-    const details = await this.saleDetailModel.find({ saleId: id }).exec();
+    const details = await this.saleDetailModel.find({ saleId: sale._id }).exec();
     const detail = details[0];
     if (!detail) throw new BadRequestException("Sale has no details to update");
 
